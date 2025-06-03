@@ -256,6 +256,25 @@ func splitBySpace(s string) []string {
 	return result
 }
 
+// CloneNode creates a copy of the element.
+func (e *Element) CloneNode(deep bool) Node {
+	clone := NewElement(e.tagName, e.ownerDocument)
+
+	// Copy all attributes
+	for name, value := range e.attributes {
+		clone.SetAttribute(name, value)
+	}
+
+	// Copy children if deep clone
+	if deep {
+		for _, child := range e.childNodes {
+			clone.AppendChild(child.CloneNode(true))
+		}
+	}
+
+	return clone
+}
+
 // getEventListeners returns the event listeners map for use in event dispatching
 func (e *Element) getEventListeners() map[string][]func(Event) {
 	return e.nodeImpl.getEventListeners()

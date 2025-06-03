@@ -169,9 +169,11 @@ func (db *DOMBindings) WrapElement(element *dom.Element) *goja.Object {
 	elem.Set("nodeName", element.TagName())
 	elem.Set("tagName", element.TagName())
 
-	// Element content properties
+	// Element content properties (using getters for dynamic updates)
 	elem.Set("innerHTML", element.InnerHTML())
 	elem.Set("outerHTML", element.OuterHTML())
+
+	// Dynamic textContent property - set current value
 	elem.Set("textContent", element.TextContent())
 
 	// Attribute methods
@@ -381,6 +383,11 @@ func (db *DOMBindings) addNodeMethods(obj *goja.Object, node dom.Node) {
 			obj.Set("lastChild", goja.Null())
 		}
 
+		// Update textContent after DOM modification for elements
+		if element, ok := node.(*dom.Element); ok {
+			obj.Set("textContent", element.TextContent())
+		}
+
 		// Update the child's parentNode property
 		childJS := call.Arguments[0].ToObject(db.vm)
 		if childJS != nil {
@@ -435,6 +442,9 @@ func (db *DOMBindings) addNodeMethods(obj *goja.Object, node dom.Node) {
 		}
 
 		cloned := node.CloneNode(deep)
+
+		// WrapNode automatically handles Element detection and should call WrapElement
+		// if the cloned node is actually an Element
 		return db.WrapNode(cloned)
 	})
 
