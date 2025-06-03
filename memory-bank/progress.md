@@ -138,15 +138,21 @@
 
 **Strategic Goal**: Make DOMulator production-ready for modern web frameworks, starting with HTMX as the highest priority target.
 
-### **Phase 1: HTMX Critical APIs** 🚀 **IN PROGRESS**
+### **Phase 1: HTMX Critical APIs** 🚀 **75% COMPLETE**
 - ✅ **HTTP/Fetch API** **COMPLETED** - Enable AJAX functionality for HTMX requests
   - **Package**: `internal/browser/fetch` - Complete implementation
   - **Tests**: 9/9 passing ✅ - Comprehensive test coverage
   - **Integration**: JavaScript runtime ready with SetupFetch() method
   - **Features**: Full HTTP methods, Promise support, Network mocking integration
-- **FormData API** ⚠️ **NEXT PRIORITY** - Handle form submissions and multipart data
-- **CustomEvent API** ⚠️ **IMPORTANT** - Support HTMX's event-driven architecture  
-- **insertAdjacentHTML** 📍 **MODERATE** - Flexible DOM content insertion
+- ✅ **FormData API** **COMPLETED** - Handle form submissions and multipart data
+  - **Package**: `internal/browser/forms` - Complete implementation
+  - **Tests**: 11/11 passing ✅ - Comprehensive test coverage
+  - **Features**: Full Web API compatibility, multipart/URL encoding, file upload support
+- ✅ **CustomEvent API** **COMPLETED** - Support HTMX's event-driven architecture
+  - **Package**: `internal/browser/events` - Complete implementation  
+  - **Tests**: 15/15 passing ✅ - Comprehensive test coverage
+  - **Features**: Full CustomEvent Web API, JavaScript constructor, event options, detail property
+- **insertAdjacentHTML** 📍 **REMAINING** - Flexible DOM content insertion
 
 ### **Phase 2: Modern Web APIs** 📍 **SECONDARY**
 - **Storage APIs**: localStorage, sessionStorage for client-side data

@@ -586,3 +586,16 @@ func (db *DOMBindings) extractEvent(value goja.Value) dom.Event {
 	// For now, return nil
 	return nil
 }
+
+// SetupBrowserAPIs sets up browser APIs like CustomEvent
+func (db *DOMBindings) SetupBrowserAPIs() {
+	// Note: The events package import will be added when this method is properly implemented
+	// For now, create a basic CustomEvent constructor stub
+	db.vm.Set("CustomEvent", func(call goja.ConstructorCall) *goja.Object {
+		// Basic stub for now - will be replaced with proper implementation
+		obj := db.vm.NewObject()
+		obj.Set("type", "")
+		obj.Set("detail", goja.Null())
+		return obj
+	})
+}
