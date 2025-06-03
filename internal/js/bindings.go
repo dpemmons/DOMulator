@@ -4,6 +4,9 @@ import (
 	"strconv"
 
 	"github.com/dop251/goja"
+	"github.com/dpemmons/DOMulator/internal/browser/cookies"
+	"github.com/dpemmons/DOMulator/internal/browser/history"
+	"github.com/dpemmons/DOMulator/internal/browser/performance"
 	"github.com/dpemmons/DOMulator/internal/browser/url"
 	"github.com/dpemmons/DOMulator/internal/css"
 	"github.com/dpemmons/DOMulator/internal/dom"
@@ -11,17 +14,22 @@ import (
 
 // DOMBindings manages the binding between Go DOM objects and JavaScript
 type DOMBindings struct {
-	vm        *goja.Runtime
-	document  *dom.Document
-	nodeCache map[dom.Node]*goja.Object // Cache to maintain object identity
+	vm            *goja.Runtime
+	document      *dom.Document
+	nodeCache     map[dom.Node]*goja.Object // Cache to maintain object identity
+	cookieManager *cookies.CookieManager
 }
 
 // NewDOMBindings creates a new DOM bindings instance
 func NewDOMBindings(vm *goja.Runtime, document *dom.Document) *DOMBindings {
+	// Initialize cookie manager with default domain
+	cookieManager := cookies.NewCookieManager("localhost", "/")
+
 	return &DOMBindings{
-		vm:        vm,
-		document:  document,
-		nodeCache: make(map[dom.Node]*goja.Object),
+		vm:            vm,
+		document:      document,
+		nodeCache:     make(map[dom.Node]*goja.Object),
+		cookieManager: cookieManager,
 	}
 }
 
@@ -139,6 +147,23 @@ func (db *DOMBindings) WrapDocument() *goja.Object {
 	doc.Set("documentElement", goja.Null())
 	doc.Set("body", goja.Null())
 	doc.Set("head", goja.Null())
+
+	// Cookie property - implement document.cookie getter/setter
+	doc.DefineAccessorProperty("cookie", db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+		// Getter: return current cookies as string
+		return db.vm.ToValue(db.cookieManager.FormatCookieString())
+	}), db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+		// Setter: parse and set cookie
+		if len(call.Arguments) > 0 {
+			cookieStr := call.Arguments[0].String()
+			err := db.cookieManager.ParseCookieString(cookieStr)
+			if err != nil {
+				// In browsers, invalid cookies are usually silently ignored
+				// rather than throwing errors, so we'll do the same
+			}
+		}
+		return goja.Undefined()
+	}), goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
 
 	// Event methods (inherited from Node)
 	db.addEventMethods(doc, db.document)
@@ -377,6 +402,205 @@ func (db *DOMBindings) WrapNode(node dom.Node) *goja.Object {
 	db.addEventMethods(obj, node)
 
 	return obj
+}
+
+// wrapHistory wraps a History object for JavaScript access
+func (db *DOMBindings) wrapHistory(h *history.History) *goja.Object {
+	obj := db.vm.NewObject()
+
+	// Helper function to update properties
+	updateProps := func() {
+		obj.Set("length", h.Length())
+		obj.Set("state", h.GetState())
+	}
+
+	// Set initial properties
+	updateProps()
+
+	// History methods
+	obj.Set("pushState", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 3 {
+			panic(db.vm.NewTypeError("pushState requires state, title, and url"))
+		}
+		state := call.Arguments[0].Export()
+		title := call.Arguments[1].String()
+		url := call.Arguments[2].String()
+
+		err := h.PushState(state, title, url)
+		if err != nil {
+			panic(db.vm.NewTypeError(err.Error()))
+		}
+
+		// Update properties after state change
+		updateProps()
+		return goja.Undefined()
+	})
+
+	obj.Set("replaceState", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 3 {
+			panic(db.vm.NewTypeError("replaceState requires state, title, and url"))
+		}
+		state := call.Arguments[0].Export()
+		title := call.Arguments[1].String()
+		url := call.Arguments[2].String()
+
+		err := h.ReplaceState(state, title, url)
+		if err != nil {
+			panic(db.vm.NewTypeError(err.Error()))
+		}
+
+		// Update properties after state change
+		updateProps()
+		return goja.Undefined()
+	})
+
+	obj.Set("go", func(call goja.FunctionCall) goja.Value {
+		delta := 0
+		if len(call.Arguments) > 0 {
+			delta = int(call.Arguments[0].ToInteger())
+		}
+		result := h.Go(delta)
+		return db.vm.ToValue(result)
+	})
+
+	obj.Set("back", func(call goja.FunctionCall) goja.Value {
+		result := h.Back()
+		return db.vm.ToValue(result)
+	})
+
+	obj.Set("forward", func(call goja.FunctionCall) goja.Value {
+		result := h.Forward()
+		return db.vm.ToValue(result)
+	})
+
+	return obj
+}
+
+// wrapPerformance wraps a Performance object for JavaScript access
+func (db *DOMBindings) wrapPerformance(p *performance.Performance) *goja.Object {
+	obj := db.vm.NewObject()
+
+	// Performance.now() - high resolution timestamp
+	obj.Set("now", func(call goja.FunctionCall) goja.Value {
+		return db.vm.ToValue(p.Now())
+	})
+
+	// Performance.mark() - create a named timestamp
+	obj.Set("mark", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("mark requires a name"))
+		}
+		name := call.Arguments[0].String()
+		p.Mark(name)
+		return goja.Undefined()
+	})
+
+	// Performance.measure() - measure between two marks
+	obj.Set("measure", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("measure requires a name"))
+		}
+		name := call.Arguments[0].String()
+
+		var startMark, endMark string
+		if len(call.Arguments) > 1 {
+			startMark = call.Arguments[1].String()
+		}
+		if len(call.Arguments) > 2 {
+			endMark = call.Arguments[2].String()
+		}
+
+		err := p.Measure(name, startMark, endMark)
+		if err != nil {
+			panic(db.vm.NewTypeError(err.Error()))
+		}
+		return goja.Undefined()
+	})
+
+	// Performance.getEntries() - get all performance entries
+	obj.Set("getEntries", func(call goja.FunctionCall) goja.Value {
+		entries := p.GetEntries()
+		return db.wrapPerformanceEntries(entries)
+	})
+
+	// Performance.getEntriesByType() - get entries by type
+	obj.Set("getEntriesByType", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return db.vm.NewArray()
+		}
+		entryType := call.Arguments[0].String()
+		entries := p.GetEntriesByType(entryType)
+		return db.wrapPerformanceEntries(entries)
+	})
+
+	// Performance.getEntriesByName() - get entries by name
+	obj.Set("getEntriesByName", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return db.vm.NewArray()
+		}
+		name := call.Arguments[0].String()
+		entries := p.GetEntriesByName(name)
+		return db.wrapPerformanceEntries(entries)
+	})
+
+	// Performance.clearMarks() - clear marks
+	obj.Set("clearMarks", func(call goja.FunctionCall) goja.Value {
+		markName := ""
+		if len(call.Arguments) > 0 {
+			markName = call.Arguments[0].String()
+		}
+		p.ClearMarks(markName)
+		return goja.Undefined()
+	})
+
+	// Performance.clearMeasures() - clear measures
+	obj.Set("clearMeasures", func(call goja.FunctionCall) goja.Value {
+		measureName := ""
+		if len(call.Arguments) > 0 {
+			measureName = call.Arguments[0].String()
+		}
+		p.ClearMeasures(measureName)
+		return goja.Undefined()
+	})
+
+	// Performance.clearResourceTimings() - clear resource timings
+	obj.Set("clearResourceTimings", func(call goja.FunctionCall) goja.Value {
+		p.ClearResourceTimings()
+		return goja.Undefined()
+	})
+
+	// Performance.setResourceTimingBufferSize() - set resource buffer size
+	obj.Set("setResourceTimingBufferSize", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("setResourceTimingBufferSize requires a maxSize"))
+		}
+		maxSize := int(call.Arguments[0].ToInteger())
+		p.SetResourceBufferSize(maxSize)
+		return goja.Undefined()
+	})
+
+	// Performance.timeOrigin - read-only property
+	obj.Set("timeOrigin", p.TimeOrigin())
+
+	return obj
+}
+
+// wrapPerformanceEntries wraps performance entries for JavaScript access
+func (db *DOMBindings) wrapPerformanceEntries(entries []performance.PerformanceEntry) *goja.Object {
+	arr := db.vm.NewArray()
+
+	for i, entry := range entries {
+		entryObj := db.vm.NewObject()
+		entryObj.Set("name", entry.Name)
+		entryObj.Set("startTime", entry.StartTime)
+		entryObj.Set("duration", entry.Duration)
+		entryObj.Set("entryType", entry.EntryType)
+
+		arr.Set(strconv.Itoa(i), entryObj)
+	}
+
+	arr.Set("length", len(entries))
+	return arr
 }
 
 // WrapNodeList wraps a slice of elements as a JavaScript array-like object
@@ -634,7 +858,7 @@ func (db *DOMBindings) extractEvent(value goja.Value) dom.Event {
 	return nil
 }
 
-// SetupBrowserAPIs sets up browser APIs like CustomEvent, URL, and URLSearchParams
+// SetupBrowserAPIs sets up browser APIs like CustomEvent, URL, URLSearchParams, History, and Performance
 func (db *DOMBindings) SetupBrowserAPIs() {
 	// URL constructor
 	db.vm.Set("URL", func(call goja.ConstructorCall) *goja.Object {
@@ -681,6 +905,31 @@ func (db *DOMBindings) SetupBrowserAPIs() {
 		obj.Set("detail", goja.Null())
 		return obj
 	})
+}
+
+// SetupGlobalAPIs sets up global browser APIs like window.history and window.performance
+func (db *DOMBindings) SetupGlobalAPIs() {
+	// Create window object if it doesn't exist
+	windowValue := db.vm.Get("window")
+	var window *goja.Object
+	if windowValue == nil || goja.IsUndefined(windowValue) || goja.IsNull(windowValue) {
+		window = db.vm.NewObject()
+		db.vm.Set("window", window)
+	} else {
+		window = windowValue.ToObject(db.vm)
+		if window == nil {
+			window = db.vm.NewObject()
+			db.vm.Set("window", window)
+		}
+	}
+
+	// Setup History API
+	h := history.NewHistory()
+	window.Set("history", db.wrapHistory(h))
+
+	// Setup Performance API
+	p := performance.NewPerformance()
+	window.Set("performance", db.wrapPerformance(p))
 }
 
 // wrapURL wraps a URL object for JavaScript access

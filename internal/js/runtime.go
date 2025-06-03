@@ -7,6 +7,7 @@ import (
 	"github.com/dop251/goja"
 	"github.com/dpemmons/DOMulator/internal/browser/storage"
 	"github.com/dpemmons/DOMulator/internal/dom"
+	"github.com/dpemmons/DOMulator/internal/loop"
 )
 
 // Runtime represents a JavaScript runtime environment with DOM integration
@@ -16,7 +17,8 @@ type Runtime struct {
 	document       *dom.Document
 	window         *goja.Object
 	console        *goja.Object
-	timers         map[int]*Timer
+	eventLoop      *loop.EventLoop // Event loop for async operations
+	timers         map[int]*Timer  // Legacy timer support (will be replaced)
 	nextTimerID    int
 	storageManager *storage.StorageManager
 }
@@ -51,6 +53,30 @@ func New(document *dom.Document) *Runtime {
 	runtime.setupStorage()
 
 	return runtime
+}
+
+// SetupEventLoop initializes the event loop and modern async APIs
+func (r *Runtime) SetupEventLoop(useVirtualTime bool) {
+	// Create event loop options
+	opts := &loop.EventLoopOptions{
+		FrameRate:        16667 * time.Microsecond, // 60fps
+		RenderingEnabled: true,
+		VirtualTime:      useVirtualTime,
+	}
+
+	// Initialize the event loop
+	r.eventLoop = loop.New(r.vm, r.document, opts)
+
+	// Set up modern async APIs
+	r.setupEventLoopAPIs()
+
+	// Replace legacy timers with event loop versions
+	r.setupEventLoopTimers()
+}
+
+// EventLoop returns the event loop instance
+func (r *Runtime) EventLoop() *loop.EventLoop {
+	return r.eventLoop
 }
 
 // VM returns the underlying Goja virtual machine
@@ -315,8 +341,208 @@ func (r *Runtime) SetupFetch(networkMocks interface{}) {
 	r.window.Set("fetch", r.global.Get("fetch"))
 }
 
+// setupEventLoopAPIs initializes modern async JavaScript APIs
+func (r *Runtime) setupEventLoopAPIs() {
+	if r.eventLoop == nil {
+		return // Event loop not initialized
+	}
+
+	// queueMicrotask() - W3C Microtask API
+	r.global.Set("queueMicrotask", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(r.vm.NewTypeError("queueMicrotask requires a callback function"))
+		}
+
+		callback, ok := goja.AssertFunction(call.Arguments[0])
+		if !ok {
+			panic(r.vm.NewTypeError("First argument must be a function"))
+		}
+
+		// Convert to Go function and queue as microtask
+		r.eventLoop.QueueMicrotask(func() {
+			_, _ = callback(goja.Undefined())
+		}, loop.QueueMicrotaskSource)
+
+		return goja.Undefined()
+	})
+
+	// requestAnimationFrame() - Animation timing API
+	r.global.Set("requestAnimationFrame", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(r.vm.NewTypeError("requestAnimationFrame requires a callback function"))
+		}
+
+		callback, ok := goja.AssertFunction(call.Arguments[0])
+		if !ok {
+			panic(r.vm.NewTypeError("First argument must be a function"))
+		}
+
+		id := r.eventLoop.RequestAnimationFrame(callback)
+		return r.vm.ToValue(id)
+	})
+
+	// cancelAnimationFrame() - Cancel animation frame
+	r.global.Set("cancelAnimationFrame", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Undefined()
+		}
+
+		id := call.Arguments[0].ToInteger()
+		r.eventLoop.CancelAnimationFrame(id)
+		return goja.Undefined()
+	})
+
+	// requestIdleCallback() - Idle callback API
+	r.global.Set("requestIdleCallback", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(r.vm.NewTypeError("requestIdleCallback requires a callback function"))
+		}
+
+		callback, ok := goja.AssertFunction(call.Arguments[0])
+		if !ok {
+			panic(r.vm.NewTypeError("First argument must be a function"))
+		}
+
+		// Optional timeout parameter
+		timeout := time.Duration(0)
+		if len(call.Arguments) > 1 {
+			if options := call.Arguments[1].ToObject(r.vm); options != nil {
+				if timeoutValue := options.Get("timeout"); timeoutValue != nil && !goja.IsUndefined(timeoutValue) {
+					timeout = time.Duration(timeoutValue.ToInteger()) * time.Millisecond
+				}
+			}
+		}
+
+		id := r.eventLoop.RequestIdleCallback(callback, timeout)
+		return r.vm.ToValue(id)
+	})
+
+	// cancelIdleCallback() - Cancel idle callback
+	r.global.Set("cancelIdleCallback", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Undefined()
+		}
+
+		id := call.Arguments[0].ToInteger()
+		r.eventLoop.CancelIdleCallback(id)
+		return goja.Undefined()
+	})
+
+	// Also set these APIs on window object
+	r.window.Set("queueMicrotask", r.global.Get("queueMicrotask"))
+	r.window.Set("requestAnimationFrame", r.global.Get("requestAnimationFrame"))
+	r.window.Set("cancelAnimationFrame", r.global.Get("cancelAnimationFrame"))
+	r.window.Set("requestIdleCallback", r.global.Get("requestIdleCallback"))
+	r.window.Set("cancelIdleCallback", r.global.Get("cancelIdleCallback"))
+}
+
+// setupEventLoopTimers replaces legacy timers with event loop-based versions
+func (r *Runtime) setupEventLoopTimers() {
+	if r.eventLoop == nil {
+		return // Fall back to legacy timers
+	}
+
+	// Enhanced setTimeout with event loop integration
+	r.global.Set("setTimeout", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(r.vm.NewTypeError("setTimeout requires at least 2 arguments"))
+		}
+
+		callback, ok := goja.AssertFunction(call.Arguments[0])
+		if !ok {
+			panic(r.vm.NewTypeError("First argument must be a function"))
+		}
+
+		delay := call.Arguments[1].ToInteger()
+		if delay < 0 {
+			delay = 0
+		}
+
+		// Additional arguments passed to callback
+		var args []goja.Value
+		if len(call.Arguments) > 2 {
+			args = call.Arguments[2:]
+		}
+
+		id := r.eventLoop.ScheduleTask(
+			loop.TimerTask,
+			loop.TimerTaskSource,
+			callback,
+			args,
+			time.Duration(delay)*time.Millisecond,
+		)
+
+		return r.vm.ToValue(id)
+	})
+
+	// Enhanced setInterval with event loop integration
+	r.global.Set("setInterval", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(r.vm.NewTypeError("setInterval requires at least 2 arguments"))
+		}
+
+		callback, ok := goja.AssertFunction(call.Arguments[0])
+		if !ok {
+			panic(r.vm.NewTypeError("First argument must be a function"))
+		}
+
+		delay := call.Arguments[1].ToInteger()
+		if delay < 0 {
+			delay = 0
+		}
+
+		// Additional arguments passed to callback
+		var args []goja.Value
+		if len(call.Arguments) > 2 {
+			args = call.Arguments[2:]
+		}
+
+		// For intervals, we need to create a wrapper that reschedules itself
+		var intervalCallback goja.Callable
+		intervalCallback = func(this goja.Value, arguments ...goja.Value) (goja.Value, error) {
+			// Execute the original callback
+			result, err := callback(this, args...)
+
+			// Schedule the next interval
+			r.eventLoop.ScheduleTask(
+				loop.TimerTask,
+				loop.TimerTaskSource,
+				intervalCallback,
+				nil,
+				time.Duration(delay)*time.Millisecond,
+			)
+
+			return result, err
+		}
+
+		id := r.eventLoop.ScheduleTask(
+			loop.TimerTask,
+			loop.TimerTaskSource,
+			intervalCallback,
+			nil,
+			time.Duration(delay)*time.Millisecond,
+		)
+
+		return r.vm.ToValue(id)
+	})
+
+	// clearTimeout/clearInterval remain the same as they work with task IDs
+	// The event loop handles task cancellation internally
+
+	// Update window object
+	r.window.Set("setTimeout", r.global.Get("setTimeout"))
+	r.window.Set("setInterval", r.global.Get("setInterval"))
+}
+
 // Shutdown cleans up the runtime and stops all timers
 func (r *Runtime) Shutdown() {
+	// Stop event loop if it exists and is running
+	if r.eventLoop != nil && r.eventLoop.IsRunning() {
+		r.eventLoop.Stop()
+		r.eventLoop.Wait()
+	}
+
+	// Clean up legacy timers
 	for _, timer := range r.timers {
 		timer.Active = false
 		if timer.timer != nil {

@@ -271,15 +271,272 @@ type DOMBindings struct {
 
 This architectural achievement ensures that DOMulator can support modern web frameworks while maintaining its core principles of speed, reliability, and ease of use. **DOMulator is now production-ready for HTMX applications** with 95% compatibility.
 
-## 🎯 **Next Strategic Phase: Advanced Framework Support**
+## 🎯 **Phase 3: HTML5 Event Loop Architecture** 📍 **NEXT MAJOR INITIATIVE**
 
-### **Phase 2 Targets for Enhanced SPA Compatibility**
-- **History API**: history.pushState, replaceState, popstate events for SPA navigation
-- **MutationObserver**: Watch DOM changes and mutations for reactive frameworks
-- **IntersectionObserver**: Viewport intersection detection for performance optimizations
-- **Performance APIs**: performance.now(), timing metrics for performance monitoring
+### **Strategic Architecture Enhancement**
+The next major architectural component is a complete HTML5-compliant event loop that will achieve **99% compatibility with React, Vue, Angular** and other modern SPA frameworks.
 
-This will expand DOMulator's compatibility to modern SPA frameworks and reactive libraries, making it a comprehensive solution for all types of web applications.
+### **Event Loop System Architecture - Main Thread Design**
+
+```mermaid
+graph TD
+    A[JavaScript Runtime] --> B[Event Loop Core]
+    B --> C[HTML5 Algorithm]
+    C --> D[Task Processing]
+    C --> E[Microtask Processing] 
+    C --> F[Render Steps]
+    C --> G[Idle Processing]
+    
+    subgraph Main Thread Only
+        H[Goja VM] --> I[Event Loop]
+        I --> J[Task Queue]
+        I --> K[Microtask Queue]
+        I --> L[Animation Queue]
+        I --> M[Idle Queue]
+    end
+    
+    subgraph Task Queue
+        J1[Timer Tasks]
+        J2[DOM Event Tasks]
+        J3[Network Tasks]
+        J4[User Interaction Tasks]
+    end
+    
+    subgraph Microtask Queue
+        K1[Promise.then]
+        K2[queueMicrotask]
+        K3[MutationObserver]
+    end
+    
+    subgraph Testing Control
+        N[Test Harness]
+        N --> O[Time Control]
+        N --> P[Queue Inspection]
+        N --> Q[Deterministic Execution]
+    end
+```
+
+**Key Architecture Principles**:
+- **Single-threaded execution**: All operations on main thread for Goja compatibility
+- **Deterministic behavior**: Perfect predictability for testing scenarios
+- **HTML5 compliance**: Faithful implementation of browser event loop algorithm
+- **No race conditions**: Simplified concurrency model eliminates synchronization complexity
+
+### **Core Event Loop Components**
+
+#### **1. EventLoop Core Structure**
+```go
+type EventLoop struct {
+    // Core queues (priority order)
+    microtaskQueue    *MicrotaskQueue    // Highest priority
+    taskQueue         *TaskQueue         // Normal priority  
+    animationQueue    *AnimationQueue    // Frame-locked
+    idleQueue         *IdleQueue         // Lowest priority
+    
+    // Runtime integration
+    vm                *goja.Runtime
+    document          *dom.Document
+    bindings          *js.DOMBindings
+    
+    // State management
+    running           atomic.Bool
+    blocked           atomic.Bool
+    renderingEnabled  atomic.Bool
+    
+    // Timing control
+    frameRate         time.Duration      // 16.67ms for 60fps
+    lastFrameTime     time.Time
+    performanceNow    func() float64     // High-resolution timing
+    
+    // Concurrency control
+    mu                sync.RWMutex
+    shutdown          chan struct{}
+    done              chan struct{}
+}
+```
+
+#### **2. HTML5 Event Loop Algorithm**
+```go
+func (el *EventLoop) processEventLoopIteration() {
+    // 1. Select a task from the task queue
+    task := el.taskQueue.SelectTask()
+    if task != nil {
+        el.executeTask(task)
+    }
+    
+    // 2. Process all microtasks
+    el.processMicrotasks()
+    
+    // 3. Update rendering if needed
+    if el.shouldRender() {
+        el.performRenderSteps()
+    }
+    
+    // 4. Process idle callbacks if time permits
+    if el.hasIdleTime() {
+        el.processIdleCallbacks()
+    }
+}
+```
+
+#### **3. Task and Microtask Management**
+```go
+type Task struct {
+    ID          int64
+    Type        TaskType
+    Callback    goja.Callable
+    Args        []goja.Value
+    Delay       time.Duration
+    ScheduledAt time.Time
+    Source      TaskSource
+}
+
+type Microtask struct {
+    ID       int64
+    Callback goja.Callable
+    Args     []goja.Value
+    Source   MicrotaskSource
+}
+```
+
+#### **4. Animation Frame System**
+```go
+type AnimationFrameCallback struct {
+    ID       int64
+    Callback goja.Callable
+    Timestamp time.Time
+}
+
+func (el *EventLoop) processAnimationFrameCallbacks(now time.Time) {
+    // Execute all scheduled animation frame callbacks
+    // with precise timing for 60fps rendering
+}
+```
+
+### **Integration with Existing Architecture**
+
+#### **Enhanced JavaScript Runtime**
+```go
+type Runtime struct {
+    vm             *goja.Runtime
+    document       *dom.Document
+    eventLoop      *loop.EventLoop  // NEW: Event loop integration
+    // ... existing fields
+}
+```
+
+#### **Enhanced Promise Implementation**
+```go
+func (el *EventLoop) CreatePromiseConstructor() goja.Value {
+    return el.vm.ToValue(func(call goja.ConstructorCall) *goja.Object {
+        // True Promise/A+ compliance with proper microtask scheduling
+        promise := &Promise{
+            state: PromisePending,
+            eventLoop: el,
+        }
+        
+        // Queue microtasks for resolution/rejection
+        el.queueMicrotask(func() {
+            promise.fulfill(value)
+        })
+        
+        return el.wrapPromise(promise)
+    })
+}
+```
+
+#### **New JavaScript APIs**
+```go
+// queueMicrotask API
+el.vm.Set("queueMicrotask", func(call goja.FunctionCall) goja.Value {
+    callback, _ := goja.AssertFunction(call.Arguments[0])
+    el.queueMicrotask(func() {
+        callback.Call(goja.Undefined())
+    })
+    return goja.Undefined()
+})
+
+// requestAnimationFrame API
+el.vm.Set("requestAnimationFrame", func(call goja.FunctionCall) goja.Value {
+    callback, _ := goja.AssertFunction(call.Arguments[0])
+    id := el.animationQueue.Schedule(callback)
+    return el.vm.ToValue(id)
+})
+```
+
+### **Testing Integration Architecture**
+
+#### **Event Loop Test Harness**
+```go
+type EventLoopTestHarness struct {
+    eventLoop *loop.EventLoop
+    timeControl *TimeController
+}
+
+// Testing utilities for deterministic async testing
+func (h *EventLoopTestHarness) AdvanceTime(duration time.Duration)
+func (h *EventLoopTestHarness) ProcessMicrotasks()
+func (h *EventLoopTestHarness) ProcessNextTask()
+func (h *EventLoopTestHarness) ProcessAnimationFrame()
+func (h *EventLoopTestHarness) GetQueueCounts() QueueStats
+```
+
+### **Package Structure Extension**
+```
+internal/loop/                    # NEW: Event loop implementation
+├── eventloop.go                 # Core EventLoop struct and Run() method
+├── task.go                      # Task queue and task definitions  
+├── microtask.go                 # Microtask queue and execution
+├── animation.go                 # Animation frame scheduling
+├── idle.go                      # Idle callback support
+├── timing.go                    # High-resolution timing
+├── performance.go               # Event loop performance metrics
+├── render.go                    # Render steps simulation
+├── testing.go                   # Testing utilities and harness
+└── eventloop_test.go            # Comprehensive test suite
+
+internal/js/
+├── runtime.go                   # ENHANCED: Event loop integration
+├── bindings.go                  # ENHANCED: New async APIs
+├── promises.go                  # NEW: Full Promise/A+ implementation
+└── timers.go                    # ENHANCED: Event loop-based timers
+```
+
+### **Performance Optimization Patterns**
+
+#### **Queue Management**
+- **Priority-based scheduling**: Microtasks > Tasks > Animation > Idle
+- **Starvation prevention**: Limits on microtask processing per iteration
+- **Memory optimization**: Object pooling for tasks and microtasks
+
+#### **Timing Precision**
+- **High-resolution timing**: Microsecond precision for performance.now()
+- **Frame rate adaptation**: Dynamic adjustment based on system performance
+- **Deadline scheduling**: Respect idle callback deadlines
+
+#### **Error Handling**
+- **Task isolation**: Errors in one task don't affect others
+- **Recovery mechanisms**: Graceful degradation on event loop errors
+- **Debug capabilities**: Comprehensive logging and queue inspection
+
+### **Framework Compatibility Achievements**
+
+#### **React Compatibility Patterns**
+- **useState/useEffect**: Proper timing for state updates and effects
+- **Concurrent features**: Support for time slicing and priority updates
+- **Hooks lifecycle**: Correct microtask timing for hook execution
+
+#### **Vue Compatibility Patterns**
+- **Reactivity system**: Proper async updates and watcher execution
+- **Async components**: Correct Promise resolution timing
+- **Lifecycle hooks**: Accurate timing for mounted/updated callbacks
+
+#### **Angular Compatibility Patterns**
+- **Zone.js patterns**: Compatible async boundary detection
+- **Change detection**: Proper timing for digest cycles
+- **HttpClient**: Correct Promise/Observable execution timing
+
+This event loop implementation will position DOMulator as the most comprehensive and accurate DOM emulation solution available, with true browser-level compatibility for modern web frameworks.
 
 ## Future Extensibility Patterns
 
