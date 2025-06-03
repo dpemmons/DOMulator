@@ -66,6 +66,61 @@ func (e *Element) GetAttribute(name string) string {
 	return e.attributes[name]
 }
 
+// HasAttribute returns true if the element has the specified attribute
+func (e *Element) HasAttribute(name string) bool {
+	_, exists := e.attributes[name]
+	return exists
+}
+
+// RemoveAttribute removes the named attribute from the element
+func (e *Element) RemoveAttribute(name string) {
+	delete(e.attributes, name)
+}
+
+// HasClass returns true if the element has the specified class
+func (e *Element) HasClass(className string) bool {
+	classAttr := e.GetAttribute("class")
+	if classAttr == "" {
+		return false
+	}
+	// Simple implementation - split by spaces and check
+	classes := splitBySpace(classAttr)
+	for _, class := range classes {
+		if class == className {
+			return true
+		}
+	}
+	return false
+}
+
+// GetElementsByTagName returns all descendant elements with the specified tag name
+func (e *Element) GetElementsByTagName(tagName string) []*Element {
+	var elements []*Element
+	Traverse(e, func(node Node) bool {
+		if elem, ok := node.(*Element); ok && node != e { // Don't include self
+			if elem.TagName() == tagName || tagName == "*" {
+				elements = append(elements, elem)
+			}
+		}
+		return true // Continue traversal
+	})
+	return elements
+}
+
+// GetElementsByClassName returns all descendant elements with the specified class name
+func (e *Element) GetElementsByClassName(className string) []*Element {
+	var elements []*Element
+	Traverse(e, func(node Node) bool {
+		if elem, ok := node.(*Element); ok && node != e { // Don't include self
+			if elem.HasClass(className) {
+				elements = append(elements, elem)
+			}
+		}
+		return true // Continue traversal
+	})
+	return elements
+}
+
 // InnerHTML returns the HTML content of the element.
 func (e *Element) InnerHTML() string {
 	if e.innerHTML == nil {
@@ -136,6 +191,26 @@ func (e *Element) SetTextContent(text string) {
 	e.innerHTML = nil     // Invalidate cached innerHTML
 	e.outerHTML = nil     // Invalidate cached outerHTML
 	e.textContent = &text // Invalidate cached textContent
+}
+
+// splitBySpace splits a string by whitespace characters
+func splitBySpace(s string) []string {
+	var result []string
+	current := ""
+	for _, r := range s {
+		if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
+			if current != "" {
+				result = append(result, current)
+				current = ""
+			}
+		} else {
+			current += string(r)
+		}
+	}
+	if current != "" {
+		result = append(result, current)
+	}
+	return result
 }
 
 // toJS is a placeholder for JavaScript binding.
