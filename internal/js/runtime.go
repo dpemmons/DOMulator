@@ -292,6 +292,16 @@ func (r *Runtime) setupDOM() {
 	r.window.Set("Node", nodeConstants)
 }
 
+// SetupFetch adds the fetch API to the runtime with optional network mocks
+func (r *Runtime) SetupFetch(networkMocks interface{}) {
+	// This will be set externally to avoid import cycles
+	// For now, just set a placeholder that will be replaced by the test harness
+	r.global.Set("fetch", func(call goja.FunctionCall) goja.Value {
+		panic(r.vm.NewTypeError("fetch API not configured - use runtime.SetupFetch() with network mocks"))
+	})
+	r.window.Set("fetch", r.global.Get("fetch"))
+}
+
 // Shutdown cleans up the runtime and stops all timers
 func (r *Runtime) Shutdown() {
 	for _, timer := range r.timers {
