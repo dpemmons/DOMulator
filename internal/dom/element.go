@@ -8,8 +8,8 @@ import (
 type Element struct {
 	nodeImpl
 
-	tagName string
-	// attributes     *AttributeMap // To be implemented
+	tagName    string
+	attributes map[string]string // Map to store attributes
 	// classList      *ClassList    // To be implemented
 	// dataset        *Dataset      // To be implemented
 	// style          *CSSStyleDeclaration // To be implemented
@@ -42,14 +42,28 @@ func NewElement(tagName string, doc *Document) *Element {
 			nodeName:      tagName, // NodeName for Element is its tagName
 			ownerDocument: doc,
 		},
-		tagName: tagName,
+		tagName:    tagName,
+		attributes: make(map[string]string), // Initialize the attributes map
 	}
+	elem.nodeImpl.self = elem // Set the self reference
 	return elem
 }
 
 // TagName returns the tag name of the element.
 func (e *Element) TagName() string {
 	return e.tagName
+}
+
+// SetAttribute sets the value of an attribute on the specified element.
+// If the attribute already exists, its value is updated; otherwise, a new attribute is added.
+func (e *Element) SetAttribute(name, value string) {
+	e.attributes[name] = value
+}
+
+// GetAttribute returns the value of the named attribute on the specified element.
+// If the named attribute does not exist, the value will be an empty string.
+func (e *Element) GetAttribute(name string) string {
+	return e.attributes[name]
 }
 
 // InnerHTML returns the HTML content of the element.

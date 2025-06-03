@@ -14,7 +14,7 @@ func NewCDATASection(data string, doc *Document) *CDATASection {
 	cdata := &CDATASection{
 		characterDataImpl: characterDataImpl{
 			nodeImpl: nodeImpl{
-				nodeType:      CDATASectionNode,
+				nodeType:      CDataSectionNode, // Corrected to CDataSectionNode
 				nodeName:      "#cdata-section",
 				nodeValue:     data,
 				ownerDocument: doc,

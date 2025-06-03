@@ -9,9 +9,7 @@ import (
 
 // Parser is responsible for parsing HTML and building a DOM tree.
 type Parser struct {
-	tokenizer *html.Tokenizer
-	doc       *dom.Document
-	errors    []error
+	doc *dom.Document
 }
 
 // NewParser creates a new Parser instance.
@@ -21,53 +19,63 @@ func NewParser() *Parser {
 
 // Parse parses the given HTML content from an io.Reader and returns a Document.
 func (p *Parser) Parse(r io.Reader) (*dom.Document, error) {
-	p.tokenizer = html.NewTokenizer(r)
-	p.doc = dom.NewDocument()
-
-	// Build DOM tree
-	if err := p.parseDocument(); err != nil {
+	// Use the full html.Parse() function to get a complete parsed tree
+	htmlNode, err := html.Parse(r)
+	if err != nil {
 		return nil, err
 	}
 
-	// TODO: Post-process (e.g., assign IDs, compute styles)
-	// p.assignIDs()
-	// p.computeStyles()
+	p.doc = dom.NewDocument()
+
+	// Convert the html.Node tree to our DOM tree
+	p.convertNode(htmlNode, p.doc)
 
 	return p.doc, nil
 }
 
-// parseDocument recursively parses tokens and builds the DOM tree.
-func (p *Parser) parseDocument() error {
-	// For now, a very basic implementation that just adds a body element
-	// and any text content. This will be expanded significantly.
-	body := dom.NewElement("body", p.doc)
-	p.doc.AppendChild(body)
-
-	for {
-		tt := p.tokenizer.Next()
-		switch tt {
-		case html.ErrorToken:
-			err := p.tokenizer.Err()
-			if err == io.EOF {
-				return nil // End of document
-			}
-			p.errors = append(p.errors, err)
-			return err // Or continue parsing, depending on error handling strategy
-		case html.TextToken:
-			text := string(p.tokenizer.Text())
-			if len(text) > 0 {
-				body.AppendChild(dom.NewText(text, p.doc))
-			}
-		case html.StartTagToken:
-			// TODO: Handle elements and their attributes
-		case html.EndTagToken:
-			// TODO: Handle closing tags
-		case html.SelfClosingTagToken:
-			// TODO: Handle self-closing tags
-		case html.CommentToken:
-			// TODO: Handle comments
-		case html.DoctypeToken:
-			// TODO: Handle doctype
+// convertNode recursively converts an html.Node tree to our DOM tree
+func (p *Parser) convertNode(htmlNode *html.Node, parent dom.Node) {
+	switch htmlNode.Type {
+	case html.DocumentNode:
+		// Document node - just process children
+		for child := htmlNode.FirstChild; child != nil; child = child.NextSibling {
+			p.convertNode(child, parent)
 		}
+
+	case html.ElementNode:
+		// Create DOM element
+		elem := dom.NewElement(htmlNode.Data, p.doc)
+
+		// Copy attributes
+		for _, attr := range htmlNode.Attr {
+			elem.SetAttribute(attr.Key, attr.Val)
+		}
+
+		// Append to parent
+		parent.AppendChild(elem)
+
+		// Process children
+		for child := htmlNode.FirstChild; child != nil; child = child.NextSibling {
+			p.convertNode(child, elem)
+		}
+
+	case html.TextNode:
+		// Create text node
+		if len(htmlNode.Data) > 0 {
+			textNode := dom.NewText(htmlNode.Data, p.doc)
+			parent.AppendChild(textNode)
+		}
+
+	case html.CommentNode:
+		// Create comment node
+		commentNode := dom.NewComment(htmlNode.Data, p.doc)
+		parent.AppendChild(commentNode)
+
+	case html.DoctypeNode:
+		// Create doctype node
+		doctypeNode := dom.NewDocumentType(htmlNode.Data, "", "", p.doc)
+		parent.AppendChild(doctypeNode)
+
+		// Note: html.RawNode and html.ErrorNode are not handled as they're not commonly needed
 	}
 }

@@ -19,6 +19,7 @@ func NewText(data string, doc *Document) *Text {
 			ownerDocument: doc,
 		},
 	}
+	text.nodeImpl.self = text // Set the self reference
 	return text
 }
 
