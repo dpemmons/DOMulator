@@ -2,9 +2,11 @@ package parser
 
 import (
 	"io"
+	"strings"
 
 	"github.com/dpemmons/DOMulator/internal/dom"
 	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 )
 
 // Parser is responsible for parsing HTML and building a DOM tree.
@@ -78,4 +80,81 @@ func (p *Parser) convertNode(htmlNode *html.Node, parent dom.Node) {
 
 		// Note: html.RawNode and html.ErrorNode are not handled as they're not commonly needed
 	}
+}
+
+// ParseFragment parses an HTML fragment and returns the parsed nodes
+// This is used for insertAdjacentHTML and similar operations
+func (p *Parser) ParseFragment(htmlFragment string, doc *dom.Document) ([]dom.Node, error) {
+	// Create a temporary container to parse the fragment
+	containerHTML := "<div>" + htmlFragment + "</div>"
+
+	// Parse the container
+	htmlNodes, err := html.ParseFragment(strings.NewReader(containerHTML), &html.Node{
+		Type:     html.ElementNode,
+		DataAtom: atom.Div,
+		Data:     "div",
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var nodes []dom.Node
+
+	// Extract the children of the container (skip the div wrapper)
+	for _, htmlNode := range htmlNodes {
+		if htmlNode.Type == html.ElementNode && htmlNode.Data == "div" {
+			// Process the children of the div
+			for child := htmlNode.FirstChild; child != nil; child = child.NextSibling {
+				if node := p.convertNodeToDOM(child, doc); node != nil {
+					nodes = append(nodes, node)
+				}
+			}
+		} else {
+			// Process the node directly
+			if node := p.convertNodeToDOM(htmlNode, doc); node != nil {
+				nodes = append(nodes, node)
+			}
+		}
+	}
+
+	return nodes, nil
+}
+
+// convertNodeToDOM converts a single html.Node to a DOM node
+func (p *Parser) convertNodeToDOM(htmlNode *html.Node, doc *dom.Document) dom.Node {
+	switch htmlNode.Type {
+	case html.ElementNode:
+		// Create DOM element
+		elem := dom.NewElement(htmlNode.Data, doc)
+
+		// Copy attributes
+		for _, attr := range htmlNode.Attr {
+			elem.SetAttribute(attr.Key, attr.Val)
+		}
+
+		// Process children
+		for child := htmlNode.FirstChild; child != nil; child = child.NextSibling {
+			if childNode := p.convertNodeToDOM(child, doc); childNode != nil {
+				elem.AppendChild(childNode)
+			}
+		}
+
+		return elem
+
+	case html.TextNode:
+		// Create text node
+		if len(htmlNode.Data) > 0 {
+			return dom.NewText(htmlNode.Data, doc)
+		}
+
+	case html.CommentNode:
+		// Create comment node
+		return dom.NewComment(htmlNode.Data, doc)
+
+	case html.DoctypeNode:
+		// Create doctype node
+		return dom.NewDocumentType(htmlNode.Data, "", "", doc)
+	}
+
+	return nil
 }

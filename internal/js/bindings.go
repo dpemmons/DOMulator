@@ -276,6 +276,52 @@ func (db *DOMBindings) WrapElement(element *dom.Element) *goja.Object {
 		return db.WrapNodeList(elements)
 	})
 
+	// Insert adjacent HTML method
+	elem.Set("insertAdjacentHTML", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(db.vm.NewTypeError("insertAdjacentHTML requires position and html"))
+		}
+
+		position := call.Arguments[0].String()
+		html := call.Arguments[1].String()
+
+		err := element.InsertAdjacentHTML(position, html)
+		if err != nil {
+			panic(db.vm.NewTypeError(err.Error()))
+		}
+
+		// Update cached properties after DOM modification
+		elem.Set("innerHTML", element.InnerHTML())
+		elem.Set("outerHTML", element.OuterHTML())
+		elem.Set("textContent", element.TextContent())
+
+		// Update childNodes if this was afterbegin or beforeend
+		if position == "afterbegin" || position == "beforeend" {
+			children := db.vm.NewArray()
+			childNodes := element.ChildNodes()
+			for i, childNode := range childNodes {
+				children.Set(strconv.Itoa(i), db.WrapNode(childNode))
+			}
+			children.Set("length", len(childNodes))
+			elem.Set("childNodes", children)
+
+			// Update navigation properties
+			if element.FirstChild() != nil {
+				elem.Set("firstChild", db.WrapNode(element.FirstChild()))
+			} else {
+				elem.Set("firstChild", goja.Null())
+			}
+
+			if element.LastChild() != nil {
+				elem.Set("lastChild", db.WrapNode(element.LastChild()))
+			} else {
+				elem.Set("lastChild", goja.Null())
+			}
+		}
+
+		return goja.Undefined()
+	})
+
 	// Add node methods
 	db.addNodeMethods(elem, element)
 

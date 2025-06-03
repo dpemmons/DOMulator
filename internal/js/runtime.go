@@ -5,18 +5,20 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
+	"github.com/dpemmons/DOMulator/internal/browser/storage"
 	"github.com/dpemmons/DOMulator/internal/dom"
 )
 
 // Runtime represents a JavaScript runtime environment with DOM integration
 type Runtime struct {
-	vm          *goja.Runtime
-	global      *goja.Object
-	document    *dom.Document
-	window      *goja.Object
-	console     *goja.Object
-	timers      map[int]*Timer
-	nextTimerID int
+	vm             *goja.Runtime
+	global         *goja.Object
+	document       *dom.Document
+	window         *goja.Object
+	console        *goja.Object
+	timers         map[int]*Timer
+	nextTimerID    int
+	storageManager *storage.StorageManager
 }
 
 // Timer represents a JavaScript timer (setTimeout/setInterval)
@@ -34,10 +36,11 @@ func New(document *dom.Document) *Runtime {
 	vm := goja.New()
 
 	runtime := &Runtime{
-		vm:          vm,
-		document:    document,
-		timers:      make(map[int]*Timer),
-		nextTimerID: 1,
+		vm:             vm,
+		document:       document,
+		timers:         make(map[int]*Timer),
+		nextTimerID:    1,
+		storageManager: storage.NewStorageManager(),
 	}
 
 	// Set up global objects
@@ -45,6 +48,7 @@ func New(document *dom.Document) *Runtime {
 	runtime.setupConsole()
 	runtime.setupTimers()
 	runtime.setupDOM()
+	runtime.setupStorage()
 
 	return runtime
 }
@@ -290,6 +294,15 @@ func (r *Runtime) setupDOM() {
 
 	r.global.Set("Node", nodeConstants)
 	r.window.Set("Node", nodeConstants)
+}
+
+// setupStorage initializes localStorage and sessionStorage
+func (r *Runtime) setupStorage() {
+	storage.SetupStorageAPIs(r.vm, r.storageManager)
+
+	// Also set on window
+	r.window.Set("localStorage", r.global.Get("localStorage"))
+	r.window.Set("sessionStorage", r.global.Get("sessionStorage"))
 }
 
 // SetupFetch adds the fetch API to the runtime with optional network mocks

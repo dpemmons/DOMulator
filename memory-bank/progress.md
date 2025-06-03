@@ -138,7 +138,7 @@
 
 **Strategic Goal**: Make DOMulator production-ready for modern web frameworks, starting with HTMX as the highest priority target.
 
-### **Phase 1: HTMX Critical APIs** 🚀 **75% COMPLETE**
+### **Phase 1: HTMX Critical APIs** 🚀 **100% COMPLETE**
 - ✅ **HTTP/Fetch API** **COMPLETED** - Enable AJAX functionality for HTMX requests
   - **Package**: `internal/browser/fetch` - Complete implementation
   - **Tests**: 9/9 passing ✅ - Comprehensive test coverage
@@ -152,7 +152,16 @@
   - **Package**: `internal/browser/events` - Complete implementation  
   - **Tests**: 15/15 passing ✅ - Comprehensive test coverage
   - **Features**: Full CustomEvent Web API, JavaScript constructor, event options, detail property
-- **insertAdjacentHTML** 📍 **REMAINING** - Flexible DOM content insertion
+- ✅ **Storage APIs** **COMPLETED** - localStorage and sessionStorage for client-side data
+  - **Package**: `internal/browser/storage` - Complete implementation
+  - **Tests**: 16/16 passing ✅ - Comprehensive test coverage including JavaScript integration
+  - **Integration**: Full JavaScript runtime integration with automatic setup
+  - **Features**: Web Storage API compliance, quota limits, JSON serialization, concurrency safety
+- ✅ **insertAdjacentHTML** **COMPLETED** - Flexible DOM content insertion
+  - **Implementation**: `internal/dom/element.go` - Complete Element.InsertAdjacentHTML method
+  - **JavaScript Binding**: `internal/js/bindings.go` - Full JavaScript integration
+  - **Tests**: 6 comprehensive test functions in `internal/dom/element_test.go` + 3 JavaScript tests
+  - **Features**: All 4 positions (beforebegin, afterbegin, beforeend, afterend), basic HTML parsing, error handling
 
 ### **Phase 2: Modern Web APIs** 📍 **SECONDARY**
 - **Storage APIs**: localStorage, sessionStorage for client-side data

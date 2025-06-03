@@ -1,6 +1,9 @@
 package dom
 
 import (
+	"errors"
+	"strings"
+
 	"github.com/dop251/goja"
 )
 
@@ -278,6 +281,195 @@ func (e *Element) CloneNode(deep bool) Node {
 // getEventListeners returns the event listeners map for use in event dispatching
 func (e *Element) getEventListeners() map[string][]func(Event) {
 	return e.nodeImpl.getEventListeners()
+}
+
+// InsertAdjacentHTML parses the specified text as HTML and inserts the resulting nodes
+// into the DOM tree at a position relative to the element on which it was invoked.
+func (e *Element) InsertAdjacentHTML(position, html string) error {
+	// Validate position
+	position = strings.ToLower(position)
+	if position != "beforebegin" && position != "afterbegin" && position != "beforeend" && position != "afterend" {
+		return errors.New("invalid position: must be 'beforebegin', 'afterbegin', 'beforeend', or 'afterend'")
+	}
+
+	// Parse HTML fragment - for now, use a simple text node approach
+	// TODO: Implement proper HTML parsing when parser circular dependency is resolved
+	parsedNodes := e.parseHTMLFragment(html)
+
+	switch position {
+	case "beforebegin":
+		// Insert before the element (as siblings)
+		parent := e.ParentNode()
+		if parent == nil {
+			return errors.New("cannot insert beforebegin: element has no parent")
+		}
+		for i, node := range parsedNodes {
+			if i == 0 {
+				parent.InsertBefore(node, e)
+			} else {
+				// Insert subsequent nodes after the previously inserted node
+				prevNode := parsedNodes[i-1]
+				var nextSibling Node
+				parentChildren := parent.ChildNodes()
+
+				// Find the next sibling after the previously inserted node
+				for j, child := range parentChildren {
+					if child == prevNode && j+1 < len(parentChildren) {
+						nextSibling = parentChildren[j+1]
+						break
+					}
+				}
+
+				if nextSibling != nil {
+					parent.InsertBefore(node, nextSibling)
+				} else {
+					parent.AppendChild(node)
+				}
+			}
+		}
+
+	case "afterbegin":
+		// Insert as first children of the element
+		for i := len(parsedNodes) - 1; i >= 0; i-- {
+			if len(e.childNodes) > 0 {
+				e.InsertBefore(parsedNodes[i], e.childNodes[0])
+			} else {
+				e.AppendChild(parsedNodes[i])
+			}
+		}
+
+	case "beforeend":
+		// Insert as last children of the element
+		for _, node := range parsedNodes {
+			e.AppendChild(node)
+		}
+
+	case "afterend":
+		// Insert after the element (as siblings)
+		parent := e.ParentNode()
+		if parent == nil {
+			return errors.New("cannot insert afterend: element has no parent")
+		}
+
+		// Find the next sibling
+		var nextSibling Node
+		found := false
+		for _, child := range parent.ChildNodes() {
+			if found {
+				nextSibling = child
+				break
+			}
+			if child == e {
+				found = true
+			}
+		}
+
+		for _, node := range parsedNodes {
+			if nextSibling != nil {
+				parent.InsertBefore(node, nextSibling)
+			} else {
+				parent.AppendChild(node)
+			}
+		}
+	}
+
+	// Invalidate caches
+	e.invalidateCaches()
+
+	return nil
+}
+
+// parseHTMLFragment is a simple HTML parser for basic fragments
+// TODO: Replace with proper HTML parsing when circular dependency is resolved
+func (e *Element) parseHTMLFragment(html string) []Node {
+	// For now, implement a very basic parser for simple cases
+	// This handles basic elements and text content
+	html = strings.TrimSpace(html)
+	if html == "" {
+		return []Node{}
+	}
+
+	// Check if it's a simple text node (no < or > characters)
+	if !strings.Contains(html, "<") {
+		return []Node{NewText(html, e.ownerDocument)}
+	}
+
+	// Basic element parsing - handle simple cases like <div>content</div>
+	var nodes []Node
+
+	// Very simple parsing for demonstration - handles basic elements
+	if strings.HasPrefix(html, "<") && strings.HasSuffix(html, ">") {
+		// Check for self-closing tag
+		if strings.HasSuffix(html, "/>") {
+			tagContent := html[1 : len(html)-2]
+			tagParts := strings.Fields(tagContent)
+			if len(tagParts) > 0 {
+				element := NewElement(tagParts[0], e.ownerDocument)
+				// Parse basic attributes
+				for i := 1; i < len(tagParts); i++ {
+					if strings.Contains(tagParts[i], "=") {
+						attrParts := strings.SplitN(tagParts[i], "=", 2)
+						if len(attrParts) == 2 {
+							key := attrParts[0]
+							value := strings.Trim(attrParts[1], `"'`)
+							element.SetAttribute(key, value)
+						}
+					}
+				}
+				nodes = append(nodes, element)
+			}
+		} else {
+			// Try to parse opening and closing tags
+			openEnd := strings.Index(html, ">")
+			if openEnd > 0 {
+				openTag := html[1:openEnd]
+				tagParts := strings.Fields(openTag)
+				if len(tagParts) > 0 {
+					tagName := tagParts[0]
+					closeTag := "</" + tagName + ">"
+					closeStart := strings.LastIndex(html, closeTag)
+
+					if closeStart > openEnd {
+						element := NewElement(tagName, e.ownerDocument)
+
+						// Parse basic attributes
+						for i := 1; i < len(tagParts); i++ {
+							if strings.Contains(tagParts[i], "=") {
+								attrParts := strings.SplitN(tagParts[i], "=", 2)
+								if len(attrParts) == 2 {
+									key := attrParts[0]
+									value := strings.Trim(attrParts[1], `"'`)
+									element.SetAttribute(key, value)
+								}
+							}
+						}
+
+						// Get content between tags
+						content := html[openEnd+1 : closeStart]
+						if strings.TrimSpace(content) != "" {
+							// Recursively parse content
+							childNodes := e.parseHTMLFragment(content)
+							for _, child := range childNodes {
+								element.AppendChild(child)
+							}
+						}
+
+						nodes = append(nodes, element)
+					}
+				}
+			}
+		}
+	} else {
+		// Fallback: treat as text
+		nodes = append(nodes, NewText(html, e.ownerDocument))
+	}
+
+	if len(nodes) == 0 {
+		// Fallback: create text node
+		nodes = append(nodes, NewText(html, e.ownerDocument))
+	}
+
+	return nodes
 }
 
 // toJS is a placeholder for JavaScript binding.

@@ -275,3 +275,143 @@ func TestNodeConstants(t *testing.T) {
 		t.Fatalf("Node constants test failed: %v", err)
 	}
 }
+
+func TestStorageAPIs(t *testing.T) {
+	doc := dom.NewDocument()
+	runtime := New(doc)
+	defer runtime.Shutdown()
+
+	// Test localStorage exists
+	_, err := runtime.RunString(`
+		if (typeof localStorage === 'undefined') {
+			throw new Error('localStorage is not defined');
+		}
+		
+		if (typeof sessionStorage === 'undefined') {
+			throw new Error('sessionStorage is not defined');
+		}
+	`)
+	if err != nil {
+		t.Fatalf("Storage APIs existence test failed: %v", err)
+	}
+}
+
+func TestLocalStorageOperations(t *testing.T) {
+	doc := dom.NewDocument()
+	runtime := New(doc)
+	defer runtime.Shutdown()
+
+	// Test localStorage operations
+	_, err := runtime.RunString(`
+		// Test setItem and getItem
+		localStorage.setItem('key1', 'value1');
+		if (localStorage.getItem('key1') !== 'value1') {
+			throw new Error('localStorage.getItem should return set value');
+		}
+		
+		// Test length property
+		if (localStorage.length !== 1) {
+			throw new Error('localStorage.length should be 1 after setting one item');
+		}
+		
+		// Test key method
+		if (localStorage.key(0) !== 'key1') {
+			throw new Error('localStorage.key(0) should return "key1"');
+		}
+		
+		// Test removeItem
+		localStorage.removeItem('key1');
+		if (localStorage.getItem('key1') !== null) {
+			throw new Error('localStorage.getItem should return null after removeItem');
+		}
+		
+		if (localStorage.length !== 0) {
+			throw new Error('localStorage.length should be 0 after removing item');
+		}
+	`)
+	if err != nil {
+		t.Fatalf("localStorage operations test failed: %v", err)
+	}
+}
+
+func TestSessionStorageOperations(t *testing.T) {
+	doc := dom.NewDocument()
+	runtime := New(doc)
+	defer runtime.Shutdown()
+
+	// Test sessionStorage operations
+	_, err := runtime.RunString(`
+		// Test setItem and getItem
+		sessionStorage.setItem('session-key', 'session-value');
+		if (sessionStorage.getItem('session-key') !== 'session-value') {
+			throw new Error('sessionStorage.getItem should return set value');
+		}
+		
+		// Test that sessionStorage and localStorage are separate
+		if (localStorage.getItem('session-key') !== null) {
+			throw new Error('localStorage should not contain sessionStorage items');
+		}
+		
+		// Test clear
+		sessionStorage.clear();
+		if (sessionStorage.length !== 0) {
+			throw new Error('sessionStorage.length should be 0 after clear');
+		}
+		
+		if (sessionStorage.getItem('session-key') !== null) {
+			throw new Error('sessionStorage should be empty after clear');
+		}
+	`)
+	if err != nil {
+		t.Fatalf("sessionStorage operations test failed: %v", err)
+	}
+}
+
+func TestStorageErrorHandling(t *testing.T) {
+	doc := dom.NewDocument()
+	runtime := New(doc)
+	defer runtime.Shutdown()
+
+	// Test error handling for insufficient arguments
+	_, err := runtime.RunString(`
+		var errorCaught = false;
+		try {
+			localStorage.setItem('key');
+		} catch(e) {
+			errorCaught = true;
+		}
+		
+		if (!errorCaught) {
+			throw new Error('Expected error for insufficient arguments to setItem');
+		}
+	`)
+	if err != nil {
+		t.Fatalf("Storage error handling test failed: %v", err)
+	}
+}
+
+func TestStorageWindowReference(t *testing.T) {
+	doc := dom.NewDocument()
+	runtime := New(doc)
+	defer runtime.Shutdown()
+
+	// Test that storage is available on window object
+	_, err := runtime.RunString(`
+		if (window.localStorage !== localStorage) {
+			throw new Error('window.localStorage should reference same object as localStorage');
+		}
+		
+		if (window.sessionStorage !== sessionStorage) {
+			throw new Error('window.sessionStorage should reference same object as sessionStorage');
+		}
+		
+		// Test operations through window references
+		window.localStorage.setItem('window-test', 'window-value');
+		if (localStorage.getItem('window-test') !== 'window-value') {
+			throw new Error('localStorage and window.localStorage should be the same object');
+		}
+	`)
+	if err != nil {
+		t.Fatalf("Storage window reference test failed: %v", err)
+	}
+}

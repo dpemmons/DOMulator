@@ -1,6 +1,7 @@
 package dom
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -460,5 +461,311 @@ func TestElementSplitBySpace(t *testing.T) {
 			t.Errorf("Test case %d: class='%s', searching for '%s', expected %v, got %v",
 				i, tc.classAttr, tc.className, tc.expected, result)
 		}
+	}
+}
+
+func TestElementInsertAdjacentHTML(t *testing.T) {
+	doc := NewDocument()
+
+	// Create test structure: container > [before, target, after]
+	container := NewElement("div", doc)
+	before := NewElement("span", doc)
+	target := NewElement("p", doc)
+	after := NewElement("div", doc)
+
+	before.SetTextContent("before")
+	target.SetTextContent("target")
+	after.SetTextContent("after")
+
+	container.AppendChild(before)
+	container.AppendChild(target)
+	container.AppendChild(after)
+
+	// Test beforebegin - insert before target element
+	err := target.InsertAdjacentHTML("beforebegin", "Hello")
+	if err != nil {
+		t.Errorf("Unexpected error for beforebegin: %v", err)
+	}
+
+	children := container.ChildNodes()
+	if len(children) != 4 {
+		t.Errorf("Expected 4 children after beforebegin, got %d", len(children))
+	}
+
+	// Check order: before, inserted text, target, after
+	if children[0] != before {
+		t.Errorf("Expected first child to still be 'before' element")
+	}
+	if children[1].NodeType() != TextNode || children[1].NodeValue() != "Hello" {
+		t.Errorf("Expected second child to be text node 'Hello', got type %d value '%s'",
+			children[1].NodeType(), children[1].NodeValue())
+	}
+	if children[2] != target {
+		t.Errorf("Expected third child to be target element")
+	}
+	if children[3] != after {
+		t.Errorf("Expected fourth child to be 'after' element")
+	}
+
+	// Test afterbegin - insert as first child of target
+	err = target.InsertAdjacentHTML("afterbegin", "<em>emphasis</em>")
+	if err != nil {
+		t.Errorf("Unexpected error for afterbegin: %v", err)
+	}
+
+	targetChildren := target.ChildNodes()
+	if len(targetChildren) != 2 {
+		t.Errorf("Expected 2 children in target after afterbegin, got %d", len(targetChildren))
+	}
+
+	// First child should be the inserted element
+	if targetChildren[0].NodeType() != ElementNode {
+		t.Errorf("Expected first child to be element node")
+	}
+	emElement := targetChildren[0].(*Element)
+	if emElement.TagName() != "em" {
+		t.Errorf("Expected first child to be 'em' element, got '%s'", emElement.TagName())
+	}
+
+	// Test beforeend - insert as last child of target
+	err = target.InsertAdjacentHTML("beforeend", "<strong>strong</strong>")
+	if err != nil {
+		t.Errorf("Unexpected error for beforeend: %v", err)
+	}
+
+	targetChildren = target.ChildNodes()
+	if len(targetChildren) != 3 {
+		t.Errorf("Expected 3 children in target after beforeend, got %d", len(targetChildren))
+	}
+
+	// Last child should be the inserted element
+	lastChild := targetChildren[len(targetChildren)-1]
+	if lastChild.NodeType() != ElementNode {
+		t.Errorf("Expected last child to be element node")
+	}
+	strongElement := lastChild.(*Element)
+	if strongElement.TagName() != "strong" {
+		t.Errorf("Expected last child to be 'strong' element, got '%s'", strongElement.TagName())
+	}
+
+	// Test afterend - insert after target element
+	err = target.InsertAdjacentHTML("afterend", "World")
+	if err != nil {
+		t.Errorf("Unexpected error for afterend: %v", err)
+	}
+
+	children = container.ChildNodes()
+	if len(children) != 5 {
+		t.Errorf("Expected 5 children after afterend, got %d", len(children))
+	}
+
+	// Check that "World" was inserted after target
+	if children[3].NodeType() != TextNode || children[3].NodeValue() != "World" {
+		t.Errorf("Expected fourth child to be text node 'World', got type %d value '%s'",
+			children[3].NodeType(), children[3].NodeValue())
+	}
+}
+
+func TestElementInsertAdjacentHTMLPositions(t *testing.T) {
+	doc := NewDocument()
+	container := NewElement("div", doc)
+	target := NewElement("p", doc)
+	container.AppendChild(target)
+
+	// Test all position values with case insensitivity
+	positions := []string{"beforebegin", "afterbegin", "beforeend", "afterend"}
+	casedPositions := []string{"BeforeBegin", "AFTERBEGIN", "beforeEnd", "AfterEnd"}
+
+	for i, pos := range positions {
+		// Test normal case
+		err := target.InsertAdjacentHTML(pos, "test")
+		if err != nil {
+			t.Errorf("Unexpected error for position '%s': %v", pos, err)
+		}
+
+		// Test case insensitive
+		err = target.InsertAdjacentHTML(casedPositions[i], "test")
+		if err != nil {
+			t.Errorf("Unexpected error for case-insensitive position '%s': %v", casedPositions[i], err)
+		}
+	}
+}
+
+func TestElementInsertAdjacentHTMLErrors(t *testing.T) {
+	doc := NewDocument()
+	elem := NewElement("div", doc)
+
+	// Test invalid position
+	err := elem.InsertAdjacentHTML("invalid", "content")
+	if err == nil {
+		t.Errorf("Expected error for invalid position")
+	}
+	if err.Error() != "invalid position: must be 'beforebegin', 'afterbegin', 'beforeend', or 'afterend'" {
+		t.Errorf("Unexpected error message: %v", err)
+	}
+
+	// Test beforebegin with no parent
+	err = elem.InsertAdjacentHTML("beforebegin", "content")
+	if err == nil {
+		t.Errorf("Expected error for beforebegin with no parent")
+	}
+	if err.Error() != "cannot insert beforebegin: element has no parent" {
+		t.Errorf("Unexpected error message: %v", err)
+	}
+
+	// Test afterend with no parent
+	err = elem.InsertAdjacentHTML("afterend", "content")
+	if err == nil {
+		t.Errorf("Expected error for afterend with no parent")
+	}
+	if err.Error() != "cannot insert afterend: element has no parent" {
+		t.Errorf("Unexpected error message: %v", err)
+	}
+}
+
+func TestElementInsertAdjacentHTMLBasicParsing(t *testing.T) {
+	doc := NewDocument()
+	container := NewElement("div", doc)
+	target := NewElement("p", doc)
+	container.AppendChild(target)
+
+	// Test text content
+	err := target.InsertAdjacentHTML("beforeend", "Plain text")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	children := target.ChildNodes()
+	if len(children) != 1 || children[0].NodeType() != TextNode {
+		t.Errorf("Expected one text node child")
+	}
+	if children[0].NodeValue() != "Plain text" {
+		t.Errorf("Expected text content 'Plain text', got '%s'", children[0].NodeValue())
+	}
+
+	// Test simple element
+	err = target.InsertAdjacentHTML("beforeend", "<span>element</span>")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	children = target.ChildNodes()
+	if len(children) != 2 {
+		t.Errorf("Expected 2 children after adding element, got %d", len(children))
+	}
+
+	if children[1].NodeType() != ElementNode {
+		t.Errorf("Expected second child to be element")
+	}
+
+	spanElement := children[1].(*Element)
+	if spanElement.TagName() != "span" {
+		t.Errorf("Expected span element, got '%s'", spanElement.TagName())
+	}
+
+	// Test element with attributes
+	err = target.InsertAdjacentHTML("beforeend", `<div class="test" id="myid">content</div>`)
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	children = target.ChildNodes()
+	if len(children) != 3 {
+		t.Errorf("Expected 3 children after adding element with attributes, got %d", len(children))
+	}
+
+	divElement := children[2].(*Element)
+	if divElement.TagName() != "div" {
+		t.Errorf("Expected div element, got '%s'", divElement.TagName())
+	}
+	if divElement.GetAttribute("class") != "test" {
+		t.Errorf("Expected class attribute 'test', got '%s'", divElement.GetAttribute("class"))
+	}
+	if divElement.GetAttribute("id") != "myid" {
+		t.Errorf("Expected id attribute 'myid', got '%s'", divElement.GetAttribute("id"))
+	}
+
+	// Test self-closing element
+	err = target.InsertAdjacentHTML("beforeend", `<input type="text" />`)
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	children = target.ChildNodes()
+	if len(children) != 4 {
+		t.Errorf("Expected 4 children after adding self-closing element, got %d", len(children))
+	}
+
+	inputElement := children[3].(*Element)
+	if inputElement.TagName() != "input" {
+		t.Errorf("Expected input element, got '%s'", inputElement.TagName())
+	}
+	if inputElement.GetAttribute("type") != "text" {
+		t.Errorf("Expected type attribute 'text', got '%s'", inputElement.GetAttribute("type"))
+	}
+}
+
+func TestElementInsertAdjacentHTMLEmpty(t *testing.T) {
+	doc := NewDocument()
+	container := NewElement("div", doc)
+	target := NewElement("p", doc)
+	container.AppendChild(target)
+
+	// Test empty string
+	err := target.InsertAdjacentHTML("beforeend", "")
+	if err != nil {
+		t.Errorf("Unexpected error for empty string: %v", err)
+	}
+
+	// Should not add any children
+	if len(target.ChildNodes()) != 0 {
+		t.Errorf("Expected no children for empty string, got %d", len(target.ChildNodes()))
+	}
+
+	// Test whitespace only
+	err = target.InsertAdjacentHTML("beforeend", "   ")
+	if err != nil {
+		t.Errorf("Unexpected error for whitespace: %v", err)
+	}
+
+	// Should not add any children (whitespace gets trimmed)
+	if len(target.ChildNodes()) != 0 {
+		t.Errorf("Expected no children for whitespace only, got %d", len(target.ChildNodes()))
+	}
+}
+
+func TestElementInsertAdjacentHTMLCacheInvalidation(t *testing.T) {
+	doc := NewDocument()
+	container := NewElement("div", doc)
+	target := NewElement("p", doc)
+	target.SetTextContent("original")
+	container.AppendChild(target)
+
+	// Access cached values
+	originalText := target.TextContent()
+	originalInner := target.InnerHTML()
+	originalOuter := target.OuterHTML()
+
+	// Insert content
+	err := target.InsertAdjacentHTML("beforeend", "<span>added</span>")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	// Verify caches are invalidated
+	if target.TextContent() == originalText {
+		t.Errorf("TextContent cache was not invalidated")
+	}
+	if target.InnerHTML() == originalInner {
+		t.Errorf("InnerHTML cache was not invalidated")
+	}
+	if target.OuterHTML() == originalOuter {
+		t.Errorf("OuterHTML cache was not invalidated")
+	}
+
+	// Verify new content is reflected
+	newText := target.TextContent()
+	if !strings.Contains(newText, "original") {
+		t.Errorf("Expected new text content to contain 'original'")
 	}
 }

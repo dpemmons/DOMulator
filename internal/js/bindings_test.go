@@ -622,3 +622,225 @@ func TestCacheMemoryManagement(t *testing.T) {
 		t.Errorf("Expected 11 cached elements, got %d", len(bindings.nodeCache))
 	}
 }
+
+func TestInsertAdjacentHTMLInJS(t *testing.T) {
+	doc := dom.NewDocument()
+	vm := goja.New()
+	bindings := NewDOMBindings(vm, doc)
+
+	// Create test structure
+	container := doc.CreateElement("div")
+	target := doc.CreateElement("p")
+	target.SetTextContent("target")
+	container.AppendChild(target)
+
+	// Wrap elements for JavaScript
+	containerJS := bindings.WrapElement(container)
+	targetJS := bindings.WrapElement(target)
+
+	vm.Set("container", containerJS)
+	vm.Set("target", targetJS)
+
+	// Test beforebegin position
+	_, err := vm.RunString(`target.insertAdjacentHTML('beforebegin', 'Hello')`)
+	if err != nil {
+		t.Fatalf("insertAdjacentHTML beforebegin failed: %v", err)
+	}
+
+	// Verify DOM was modified
+	children := container.ChildNodes()
+	if len(children) != 2 {
+		t.Errorf("Expected 2 children after beforebegin, got %d", len(children))
+	}
+	if children[0].NodeType() != dom.TextNode || children[0].NodeValue() != "Hello" {
+		t.Errorf("Expected first child to be text node 'Hello'")
+	}
+
+	// Test afterbegin position
+	_, err = vm.RunString(`target.insertAdjacentHTML('afterbegin', '<em>emphasis</em>')`)
+	if err != nil {
+		t.Fatalf("insertAdjacentHTML afterbegin failed: %v", err)
+	}
+
+	// Verify target has children
+	targetChildren := target.ChildNodes()
+	if len(targetChildren) != 2 {
+		t.Errorf("Expected 2 children in target after afterbegin, got %d", len(targetChildren))
+	}
+	if targetChildren[0].NodeType() != dom.ElementNode {
+		t.Errorf("Expected first child to be element node")
+	}
+
+	// Test beforeend position
+	_, err = vm.RunString(`target.insertAdjacentHTML('beforeend', '<strong>strong</strong>')`)
+	if err != nil {
+		t.Fatalf("insertAdjacentHTML beforeend failed: %v", err)
+	}
+
+	// Verify target now has 3 children
+	targetChildren = target.ChildNodes()
+	if len(targetChildren) != 3 {
+		t.Errorf("Expected 3 children in target after beforeend, got %d", len(targetChildren))
+	}
+
+	// Test afterend position
+	_, err = vm.RunString(`target.insertAdjacentHTML('afterend', 'World')`)
+	if err != nil {
+		t.Fatalf("insertAdjacentHTML afterend failed: %v", err)
+	}
+
+	// Verify container now has 3 children
+	children = container.ChildNodes()
+	if len(children) != 3 {
+		t.Errorf("Expected 3 children in container after afterend, got %d", len(children))
+	}
+
+	// Test error handling - invalid position
+	_, err = vm.RunString(`
+		try {
+			target.insertAdjacentHTML('invalid', 'content');
+		} catch(e) {
+			'error caught';
+		}
+	`)
+	if err != nil {
+		t.Fatalf("Error handling test failed: %v", err)
+	}
+
+	// Test error handling - missing arguments
+	_, err = vm.RunString(`
+		try {
+			target.insertAdjacentHTML('beforeend');
+		} catch(e) {
+			'error caught';
+		}
+	`)
+	if err != nil {
+		t.Fatalf("Missing arguments test failed: %v", err)
+	}
+
+	// Test property updates after insertion
+	result, err := vm.RunString(`target.textContent`)
+	if err != nil {
+		t.Fatalf("textContent access after insertion failed: %v", err)
+	}
+
+	// Should contain original text plus inserted content
+	textContent := result.String()
+	if !strings.Contains(textContent, "target") {
+		t.Errorf("Expected textContent to contain 'target', got '%s'", textContent)
+	}
+
+	// Test innerHTML update
+	result, err = vm.RunString(`target.innerHTML`)
+	if err != nil {
+		t.Fatalf("innerHTML access after insertion failed: %v", err)
+	}
+
+	innerHTML := result.String()
+	if !strings.Contains(innerHTML, "em") || !strings.Contains(innerHTML, "strong") {
+		t.Errorf("Expected innerHTML to contain inserted elements, got '%s'", innerHTML)
+	}
+}
+
+func TestInsertAdjacentHTMLComplexHTML(t *testing.T) {
+	doc := dom.NewDocument()
+	vm := goja.New()
+	bindings := NewDOMBindings(vm, doc)
+
+	target := doc.CreateElement("div")
+	targetJS := bindings.WrapElement(target)
+	vm.Set("target", targetJS)
+
+	// Test complex HTML with attributes
+	_, err := vm.RunString(`target.insertAdjacentHTML('beforeend', '<div class="test" id="myid">content</div>')`)
+	if err != nil {
+		t.Fatalf("Complex HTML insertion failed: %v", err)
+	}
+
+	children := target.ChildNodes()
+	if len(children) != 1 {
+		t.Errorf("Expected 1 child after complex HTML insertion, got %d", len(children))
+	}
+
+	if children[0].NodeType() != dom.ElementNode {
+		t.Errorf("Expected child to be element node")
+	}
+
+	child := children[0].(*dom.Element)
+	if child.TagName() != "div" {
+		t.Errorf("Expected child tag name 'div', got '%s'", child.TagName())
+	}
+
+	if child.GetAttribute("class") != "test" {
+		t.Errorf("Expected class attribute 'test', got '%s'", child.GetAttribute("class"))
+	}
+
+	if child.GetAttribute("id") != "myid" {
+		t.Errorf("Expected id attribute 'myid', got '%s'", child.GetAttribute("id"))
+	}
+
+	// Test self-closing element
+	_, err = vm.RunString(`target.insertAdjacentHTML('beforeend', '<input type="text" value="hello" />')`)
+	if err != nil {
+		t.Fatalf("Self-closing element insertion failed: %v", err)
+	}
+
+	children = target.ChildNodes()
+	if len(children) != 2 {
+		t.Errorf("Expected 2 children after self-closing element insertion, got %d", len(children))
+	}
+
+	input := children[1].(*dom.Element)
+	if input.TagName() != "input" {
+		t.Errorf("Expected input element, got '%s'", input.TagName())
+	}
+
+	if input.GetAttribute("type") != "text" {
+		t.Errorf("Expected type attribute 'text', got '%s'", input.GetAttribute("type"))
+	}
+}
+
+func TestInsertAdjacentHTMLWithNestedStructure(t *testing.T) {
+	doc := dom.NewDocument()
+	vm := goja.New()
+	bindings := NewDOMBindings(vm, doc)
+
+	// Create nested structure in JavaScript
+	docJS := bindings.WrapDocument()
+	vm.Set("document", docJS)
+
+	_, err := vm.RunString(`
+		var container = document.createElement('div');
+		var target = document.createElement('p');
+		target.insertAdjacentHTML('beforeend', 'Original text');
+		container.appendChild(target);
+		
+		// Now insert complex nested structure
+		target.insertAdjacentHTML('afterbegin', '<span><strong>Bold</strong> text</span>');
+	`)
+	if err != nil {
+		t.Fatalf("Nested structure test failed: %v", err)
+	}
+
+	// Verify the JavaScript structure matches Go DOM
+	result, err := vm.RunString(`target.childNodes.length`)
+	if err != nil {
+		t.Fatalf("Failed to access childNodes: %v", err)
+	}
+
+	if result.ToInteger() != 2 {
+		t.Errorf("Expected 2 children in target, got %d", result.ToInteger())
+	}
+
+	// Test textContent includes all nested text
+	result, err = vm.RunString(`target.textContent`)
+	if err != nil {
+		t.Fatalf("Failed to access textContent: %v", err)
+	}
+
+	textContent := result.String()
+	if !strings.Contains(textContent, "Bold") || !strings.Contains(textContent, "Original") {
+		t.Errorf("Expected textContent to contain all text, got '%s'", textContent)
+	}
+}
