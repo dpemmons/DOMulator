@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/dop251/goja"
+	"github.com/dpemmons/DOMulator/internal/browser/url"
 	"github.com/dpemmons/DOMulator/internal/css"
 	"github.com/dpemmons/DOMulator/internal/dom"
 )
@@ -633,15 +634,214 @@ func (db *DOMBindings) extractEvent(value goja.Value) dom.Event {
 	return nil
 }
 
-// SetupBrowserAPIs sets up browser APIs like CustomEvent
+// SetupBrowserAPIs sets up browser APIs like CustomEvent, URL, and URLSearchParams
 func (db *DOMBindings) SetupBrowserAPIs() {
-	// Note: The events package import will be added when this method is properly implemented
-	// For now, create a basic CustomEvent constructor stub
+	// URL constructor
+	db.vm.Set("URL", func(call goja.ConstructorCall) *goja.Object {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("URL constructor requires a URL string"))
+		}
+
+		urlStr := call.Arguments[0].String()
+		var base string
+		if len(call.Arguments) > 1 {
+			base = call.Arguments[1].String()
+		}
+
+		var goURL *url.URL
+		var err error
+		if base != "" {
+			goURL, err = url.NewURL(urlStr, base)
+		} else {
+			goURL, err = url.NewURL(urlStr)
+		}
+
+		if err != nil {
+			panic(db.vm.NewTypeError("Invalid URL: " + err.Error()))
+		}
+
+		return db.wrapURL(goURL)
+	})
+
+	// URLSearchParams constructor
+	db.vm.Set("URLSearchParams", func(call goja.ConstructorCall) *goja.Object {
+		var init string
+		if len(call.Arguments) > 0 {
+			init = call.Arguments[0].String()
+		}
+
+		params := url.NewURLSearchParams(init)
+		return db.wrapURLSearchParams(params)
+	})
+
+	// CustomEvent constructor stub
 	db.vm.Set("CustomEvent", func(call goja.ConstructorCall) *goja.Object {
-		// Basic stub for now - will be replaced with proper implementation
 		obj := db.vm.NewObject()
 		obj.Set("type", "")
 		obj.Set("detail", goja.Null())
 		return obj
 	})
+}
+
+// wrapURL wraps a URL object for JavaScript access
+func (db *DOMBindings) wrapURL(goURL *url.URL) *goja.Object {
+	obj := db.vm.NewObject()
+
+	// URL properties
+	obj.Set("href", goURL.Href())
+	obj.Set("origin", goURL.Origin())
+	obj.Set("protocol", goURL.Protocol())
+	obj.Set("host", goURL.Host())
+	obj.Set("hostname", goURL.Hostname())
+	obj.Set("port", goURL.Port())
+	obj.Set("pathname", goURL.Pathname())
+	obj.Set("search", goURL.Search())
+	obj.Set("hash", goURL.Hash())
+
+	// SearchParams property
+	obj.Set("searchParams", db.wrapURLSearchParams(goURL.SearchParams()))
+
+	// toString method
+	obj.Set("toString", func(call goja.FunctionCall) goja.Value {
+		return db.vm.ToValue(goURL.ToString())
+	})
+
+	// toJSON method
+	obj.Set("toJSON", func(call goja.FunctionCall) goja.Value {
+		return db.vm.ToValue(goURL.ToJSON())
+	})
+
+	return obj
+}
+
+// wrapURLSearchParams wraps URLSearchParams for JavaScript access
+func (db *DOMBindings) wrapURLSearchParams(params *url.URLSearchParams) *goja.Object {
+	obj := db.vm.NewObject()
+
+	// URLSearchParams methods
+	obj.Set("append", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(db.vm.NewTypeError("append requires name and value"))
+		}
+		name := call.Arguments[0].String()
+		value := call.Arguments[1].String()
+		params.Append(name, value)
+		return goja.Undefined()
+	})
+
+	obj.Set("delete", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("delete requires name"))
+		}
+		name := call.Arguments[0].String()
+		params.Delete(name)
+		return goja.Undefined()
+	})
+
+	obj.Set("get", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Null()
+		}
+		name := call.Arguments[0].String()
+		value := params.Get(name)
+		if value == "" && !params.Has(name) {
+			return goja.Null()
+		}
+		return db.vm.ToValue(value)
+	})
+
+	obj.Set("getAll", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return db.vm.NewArray()
+		}
+		name := call.Arguments[0].String()
+		values := params.GetAll(name)
+		arr := db.vm.NewArray()
+		for i, v := range values {
+			arr.Set(strconv.Itoa(i), v)
+		}
+		arr.Set("length", len(values))
+		return arr
+	})
+
+	obj.Set("has", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return db.vm.ToValue(false)
+		}
+		name := call.Arguments[0].String()
+		return db.vm.ToValue(params.Has(name))
+	})
+
+	obj.Set("set", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(db.vm.NewTypeError("set requires name and value"))
+		}
+		name := call.Arguments[0].String()
+		value := call.Arguments[1].String()
+		params.Set(name, value)
+		return goja.Undefined()
+	})
+
+	obj.Set("sort", func(call goja.FunctionCall) goja.Value {
+		params.Sort()
+		return goja.Undefined()
+	})
+
+	obj.Set("toString", func(call goja.FunctionCall) goja.Value {
+		return db.vm.ToValue(params.ToString())
+	})
+
+	obj.Set("keys", func(call goja.FunctionCall) goja.Value {
+		keys := params.Keys()
+		arr := db.vm.NewArray()
+		for i, k := range keys {
+			arr.Set(strconv.Itoa(i), k)
+		}
+		arr.Set("length", len(keys))
+		return arr
+	})
+
+	obj.Set("values", func(call goja.FunctionCall) goja.Value {
+		values := params.Values()
+		arr := db.vm.NewArray()
+		for i, v := range values {
+			arr.Set(strconv.Itoa(i), v)
+		}
+		arr.Set("length", len(values))
+		return arr
+	})
+
+	obj.Set("entries", func(call goja.FunctionCall) goja.Value {
+		entries := params.Entries()
+		arr := db.vm.NewArray()
+		for i, entry := range entries {
+			entryArr := db.vm.NewArray()
+			entryArr.Set("0", entry[0])
+			entryArr.Set("1", entry[1])
+			entryArr.Set("length", 2)
+			arr.Set(strconv.Itoa(i), entryArr)
+		}
+		arr.Set("length", len(entries))
+		return arr
+	})
+
+	obj.Set("forEach", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("forEach requires a callback"))
+		}
+		callback, ok := goja.AssertFunction(call.Arguments[0])
+		if !ok {
+			panic(db.vm.NewTypeError("Callback must be a function"))
+		}
+
+		params.ForEach(func(value, name string) {
+			_, _ = callback(goja.Undefined(), db.vm.ToValue(value), db.vm.ToValue(name))
+		})
+		return goja.Undefined()
+	})
+
+	// Size property (read-only)
+	obj.Set("size", params.Size())
+
+	return obj
 }
