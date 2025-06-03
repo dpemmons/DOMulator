@@ -79,16 +79,16 @@ func TestCompileSelector(t *testing.T) {
 	tests := []struct {
 		name     string
 		selector string
-		expected Selector
+		expected SimpleSelector // Just test the first part for simple selectors
 		hasError bool
 	}{
-		{"Tag Selector", "div", Selector{tag: "div"}, false},
-		{"ID Selector", "#container", Selector{id: "container"}, false},
-		{"Class Selector", ".item", Selector{classes: []string{"item"}}, false},
-		{"Tag and Class", "p.text-content", Selector{tag: "p", classes: []string{"text-content"}}, false},
-		{"Tag and ID", "div#container", Selector{tag: "div", id: "container"}, false},
-		{"Multiple Classes", ".wrapper.main", Selector{classes: []string{"wrapper", "main"}}, false},
-		{"Complex Selector (not fully supported yet)", "div#container.wrapper.main", Selector{tag: "div", id: "container", classes: []string{"wrapper", "main"}}, false},
+		{"Tag Selector", "div", SimpleSelector{tag: "div"}, false},
+		{"ID Selector", "#container", SimpleSelector{id: "container"}, false},
+		{"Class Selector", ".item", SimpleSelector{classes: []string{"item"}}, false},
+		{"Tag and Class", "p.text-content", SimpleSelector{tag: "p", classes: []string{"text-content"}}, false},
+		{"Tag and ID", "div#container", SimpleSelector{tag: "div", id: "container"}, false},
+		{"Multiple Classes", ".wrapper.main", SimpleSelector{classes: []string{"wrapper", "main"}}, false},
+		{"Complex Selector", "div#container.wrapper.main", SimpleSelector{tag: "div", id: "container", classes: []string{"wrapper", "main"}}, false},
 	}
 
 	for _, tt := range tests {
@@ -99,21 +99,53 @@ func TestCompileSelector(t *testing.T) {
 				return
 			}
 			if !tt.hasError {
-				if s.tag != tt.expected.tag {
-					t.Errorf("Expected tag %q, got %q", tt.expected.tag, s.tag)
+				// For simple selectors, there should be exactly one part
+				if len(s.parts) != 1 {
+					t.Errorf("Expected 1 selector part, got %d", len(s.parts))
+					return
 				}
-				if s.id != tt.expected.id {
-					t.Errorf("Expected id %q, got %q", tt.expected.id, s.id)
+				part := s.parts[0]
+				if part.tag != tt.expected.tag {
+					t.Errorf("Expected tag %q, got %q", tt.expected.tag, part.tag)
 				}
-				if len(s.classes) != len(tt.expected.classes) {
-					t.Errorf("Expected %d classes, got %d", len(tt.expected.classes), len(s.classes))
+				if part.id != tt.expected.id {
+					t.Errorf("Expected id %q, got %q", tt.expected.id, part.id)
+				}
+				if len(part.classes) != len(tt.expected.classes) {
+					t.Errorf("Expected %d classes, got %d", len(tt.expected.classes), len(part.classes))
 				} else {
-					for i, class := range s.classes {
+					for i, class := range part.classes {
 						if class != tt.expected.classes[i] {
 							t.Errorf("Expected class %q, got %q at index %d", tt.expected.classes[i], class, i)
 						}
 					}
 				}
+			}
+		})
+	}
+}
+
+func TestDescendantSelector(t *testing.T) {
+	tests := []struct {
+		name      string
+		selector  string
+		partCount int
+	}{
+		{"Simple Selector", "div", 1},
+		{"Two-part Descendant", "div p", 2},
+		{"Three-part Descendant", "body div p", 3},
+		{"Complex Descendant", "#container .item", 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, err := CompileSelector(tt.selector)
+			if err != nil {
+				t.Errorf("CompileSelector() error = %v", err)
+				return
+			}
+			if len(s.parts) != tt.partCount {
+				t.Errorf("Expected %d parts, got %d", tt.partCount, len(s.parts))
 			}
 		})
 	}
@@ -147,6 +179,12 @@ func TestMatches(t *testing.T) {
 		{"Matches ID and Class", span1, "#span1.highlight", true},
 		{"Matches Tag, ID, and Class", span1, "span#span1.highlight", true},
 		{"Non-Element Node", doc, "html", false}, // Document node should not match element selector
+		// Add descendant selector tests
+		{"Descendant: div p matches", p1, "div p", true},
+		{"Descendant: body p matches", p1, "body p", true},
+		{"Descendant: body div p matches", p1, "body div p", true},
+		{"Descendant: span p does not match", p1, "span p", false},
+		{"Descendant: #container .item matches", containerDiv.ChildNodes()[1], "#container .item", true},
 	}
 
 	for _, tt := range tests {
@@ -155,8 +193,8 @@ func TestMatches(t *testing.T) {
 			if err != nil {
 				t.Fatalf("CompileSelector failed: %v", err)
 			}
-			if sel.Matches(tt.node) != tt.expected {
-				t.Errorf("Selector %q on node %q: Expected %v, got %v", tt.selector, tt.node.NodeName(), tt.expected, sel.Matches(tt.node))
+			if sel.MatchesDescendant(tt.node) != tt.expected {
+				t.Errorf("Selector %q on node %q: Expected %v, got %v", tt.selector, tt.node.NodeName(), tt.expected, sel.MatchesDescendant(tt.node))
 			}
 		})
 	}

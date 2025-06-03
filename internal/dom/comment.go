@@ -19,6 +19,7 @@ func NewComment(data string, doc *Document) *Comment {
 			ownerDocument: doc,
 		},
 	}
+	comment.nodeImpl.self = comment // Set the self reference
 	return comment
 }
 

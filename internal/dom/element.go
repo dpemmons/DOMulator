@@ -49,6 +49,49 @@ func NewElement(tagName string, doc *Document) *Element {
 	return elem
 }
 
+// AppendChild overrides the nodeImpl version to handle cache invalidation
+func (e *Element) AppendChild(child Node) Node {
+	result := e.nodeImpl.AppendChild(child)
+	if result != nil {
+		e.invalidateCaches()
+	}
+	return result
+}
+
+// RemoveChild overrides the nodeImpl version to handle cache invalidation
+func (e *Element) RemoveChild(child Node) Node {
+	result := e.nodeImpl.RemoveChild(child)
+	if result != nil {
+		e.invalidateCaches()
+	}
+	return result
+}
+
+// InsertBefore overrides the nodeImpl version to handle cache invalidation
+func (e *Element) InsertBefore(newChild, refChild Node) Node {
+	result := e.nodeImpl.InsertBefore(newChild, refChild)
+	if result != nil {
+		e.invalidateCaches()
+	}
+	return result
+}
+
+// ReplaceChild overrides the nodeImpl version to handle cache invalidation
+func (e *Element) ReplaceChild(newChild, oldChild Node) Node {
+	result := e.nodeImpl.ReplaceChild(newChild, oldChild)
+	if result != nil {
+		e.invalidateCaches()
+	}
+	return result
+}
+
+// invalidateCaches clears cached content when the element's children change
+func (e *Element) invalidateCaches() {
+	e.innerHTML = nil
+	e.outerHTML = nil
+	e.textContent = nil
+}
+
 // TagName returns the tag name of the element.
 func (e *Element) TagName() string {
 	return e.tagName
@@ -127,7 +170,7 @@ func (e *Element) InnerHTML() string {
 		// TODO: Implement actual HTML serialization
 		// For now, a placeholder
 		content := ""
-		for _, child := range e.childNodes {
+		for _, child := range e.ChildNodes() {
 			// This is a very basic placeholder.
 			// A proper implementation would recursively serialize children.
 			if child.NodeType() == TextNode {
@@ -211,6 +254,11 @@ func splitBySpace(s string) []string {
 		result = append(result, current)
 	}
 	return result
+}
+
+// getEventListeners returns the event listeners map for use in event dispatching
+func (e *Element) getEventListeners() map[string][]func(Event) {
+	return e.nodeImpl.getEventListeners()
 }
 
 // toJS is a placeholder for JavaScript binding.

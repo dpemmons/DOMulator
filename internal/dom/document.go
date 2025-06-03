@@ -21,6 +21,7 @@ func NewDocument() *Document {
 		},
 	}
 	doc.ownerDocument = doc // A document is its own owner document
+	doc.nodeImpl.self = doc // Set the self reference
 	return doc
 }
 
@@ -46,6 +47,9 @@ func (d *Document) CreateDocumentFragment() *DocumentFragment {
 
 // GetElementById returns the element with the specified ID
 func (d *Document) GetElementById(id string) *Element {
+	if id == "" {
+		return nil // Don't search for empty IDs
+	}
 	var result *Element
 	Traverse(d, func(node Node) bool {
 		if elem, ok := node.(*Element); ok {

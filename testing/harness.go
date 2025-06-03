@@ -1,0 +1,154 @@
+package testing
+
+import (
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/dpemmons/DOMulator/internal/dom"
+	"github.com/dpemmons/DOMulator/internal/js"
+	htmlparser "github.com/dpemmons/DOMulator/internal/parser"
+)
+
+// TestHarness provides a high-level API for testing web applications
+// with DOMulator. It supports both direct handler integration and
+// server-based testing for maximum flexibility.
+type TestHarness struct {
+	client    *HTTPClient
+	domulator *DOMulator
+	mocks     *NetworkMocks
+	config    *Config
+}
+
+// DOMulator wraps the core DOMulator functionality for testing
+type DOMulator struct {
+	document *dom.Document
+	runtime  *js.Runtime
+}
+
+// Config holds configuration options for the test harness
+type Config struct {
+	DefaultTimeout time.Duration
+	BaseURL        string
+	Headers        map[string]string
+}
+
+// NewTestHarness creates a new test harness instance
+func NewTestHarness() *TestHarness {
+	config := &Config{
+		DefaultTimeout: 5 * time.Second,
+		Headers:        make(map[string]string),
+	}
+
+	mocks := NewNetworkMocks()
+	client := NewHTTPClient(mocks)
+
+	return &TestHarness{
+		client: client,
+		mocks:  mocks,
+		config: config,
+	}
+}
+
+// SetHandler configures the harness to use a direct HTTP handler
+// for requests. This is the fastest integration method for unit tests.
+func (h *TestHarness) SetHandler(handler http.Handler) *TestHarness {
+	h.client.SetHandler(handler)
+	return h
+}
+
+// SetBaseURL configures the harness to make HTTP requests to a real server.
+// This is useful for integration tests or testing against running servers.
+func (h *TestHarness) SetBaseURL(url string) *TestHarness {
+	h.config.BaseURL = url
+	h.client.SetBaseURL(url)
+	return h
+}
+
+// Navigate loads a page from the specified URL and initializes the DOM
+func (h *TestHarness) Navigate(url string) *TestHarness {
+	response := h.client.GET(url)
+	if response.Error != nil {
+		panic(fmt.Sprintf("Failed to navigate to %s: %v", url, response.Error))
+	}
+	return h.LoadHTML(response.Body)
+}
+
+// GET performs a GET request and returns the response
+func (h *TestHarness) GET(path string) *Response {
+	return h.client.GET(path)
+}
+
+// POST performs a POST request with the given body and returns the response
+func (h *TestHarness) POST(path string, body interface{}) *Response {
+	return h.client.POST(path, body)
+}
+
+// LoadHTML loads HTML content into the DOMulator environment
+func (h *TestHarness) LoadHTML(html string) *TestHarness {
+	// Parse HTML into DOM using the parser
+	parser := htmlparser.NewParser()
+	document, err := parser.Parse(strings.NewReader(html))
+	if err != nil {
+		panic(fmt.Sprintf("Failed to parse HTML: %v", err))
+	}
+
+	// Create JavaScript runtime with DOM integration
+	runtime := js.New(document)
+
+	// Store in domulator wrapper
+	h.domulator = &DOMulator{
+		document: document,
+		runtime:  runtime,
+	}
+
+	return h
+}
+
+// ExecuteScript executes JavaScript code in the current context
+func (h *TestHarness) ExecuteScript(js string) error {
+	if h.domulator == nil {
+		return fmt.Errorf("no document loaded - call LoadHTML() or Navigate() first")
+	}
+
+	_, err := h.domulator.runtime.RunString(js)
+	return err
+}
+
+// Document returns the current DOM document (for advanced use cases)
+func (h *TestHarness) Document() *dom.Document {
+	if h.domulator == nil {
+		return nil
+	}
+	return h.domulator.document
+}
+
+// Runtime returns the JavaScript runtime (for advanced use cases)
+func (h *TestHarness) Runtime() *js.Runtime {
+	if h.domulator == nil {
+		return nil
+	}
+	return h.domulator.runtime
+}
+
+// Close cleans up resources used by the harness
+func (h *TestHarness) Close() error {
+	if h.domulator != nil && h.domulator.runtime != nil {
+		h.domulator.runtime.Shutdown()
+	}
+	return nil
+}
+
+// SetTimeout configures the default timeout for wait operations
+func (h *TestHarness) SetTimeout(timeout time.Duration) *TestHarness {
+	h.config.DefaultTimeout = timeout
+	return h
+}
+
+// SetHeader sets a default header for all HTTP requests
+func (h *TestHarness) SetHeader(key, value string) *TestHarness {
+	h.config.Headers[key] = value
+	h.client.SetHeader(key, value)
+	return h
+}

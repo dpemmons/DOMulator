@@ -92,6 +92,13 @@ func (n *nodeImpl) RemoveEventListener(eventType string, listener func(Event)) {
 	}
 }
 
+func (n *nodeImpl) getEventListeners() map[string][]func(Event) {
+	if n.eventListeners == nil {
+		n.eventListeners = make(map[string][]func(Event))
+	}
+	return n.eventListeners
+}
+
 func (n *nodeImpl) DispatchEvent(event Event) bool {
 	baseEvent, ok := event.(*BaseEvent)
 	if !ok {
@@ -111,11 +118,16 @@ func (n *nodeImpl) DispatchEvent(event Event) bool {
 	for i := len(path) - 1; i >= 0; i-- {
 		node := path[i]
 		baseEvent.SetCurrentTarget(node)
-		if handlers, ok := node.(*nodeImpl).eventListeners[baseEvent.Type()]; ok {
-			for _, handler := range handlers {
-				handler(baseEvent)
-				if baseEvent.IsPropagationStopped() {
-					return !baseEvent.DefaultPrevented()
+		// Access event listeners through the interface to handle different node types
+		if nodeWithListeners, ok := node.(interface {
+			getEventListeners() map[string][]func(Event)
+		}); ok {
+			if handlers, exists := nodeWithListeners.getEventListeners()[baseEvent.Type()]; exists {
+				for _, handler := range handlers {
+					handler(baseEvent)
+					if baseEvent.IsPropagationStopped() {
+						return !baseEvent.DefaultPrevented()
+					}
 				}
 			}
 		}
@@ -142,11 +154,16 @@ func (n *nodeImpl) DispatchEvent(event Event) bool {
 		for i := 1; i < len(path); i++ { // Start from parent of target
 			node := path[i]
 			baseEvent.SetCurrentTarget(node)
-			if handlers, ok := node.(*nodeImpl).eventListeners[baseEvent.Type()]; ok {
-				for _, handler := range handlers {
-					handler(baseEvent)
-					if baseEvent.IsPropagationStopped() {
-						return !baseEvent.DefaultPrevented()
+			// Access event listeners through the interface to handle different node types
+			if nodeWithListeners, ok := node.(interface {
+				getEventListeners() map[string][]func(Event)
+			}); ok {
+				if handlers, exists := nodeWithListeners.getEventListeners()[baseEvent.Type()]; exists {
+					for _, handler := range handlers {
+						handler(baseEvent)
+						if baseEvent.IsPropagationStopped() {
+							return !baseEvent.DefaultPrevented()
+						}
 					}
 				}
 			}
