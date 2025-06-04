@@ -190,10 +190,6 @@ func TestCookieManagerDomainAndPath(t *testing.T) {
 	vm := goja.New()
 	document := dom.NewDocument()
 	bindings := NewDOMBindings(vm, document)
-
-	// Update cookie manager domain/path for testing
-	bindings.cookieManager = bindings.cookieManager // Keep existing manager
-
 	vm.Set("document", bindings.WrapDocument())
 
 	// Set a cookie and verify defaults
