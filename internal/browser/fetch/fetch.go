@@ -146,11 +146,14 @@ func (f *FetchAPI) parseRequestOptions(vm *goja.Runtime, value goja.Value) *Requ
 		options.Body = bodyVal.String()
 	}
 
-	// Parse signal
-	if signalVal := obj.Get("signal"); !goja.IsUndefined(signalVal) && !goja.IsNull(signalVal) {
-		signalObj := signalVal.ToObject(vm)
-		if signalObj != nil {
-			options.Signal = abort.GetAbortSignalFromJS(signalObj)
+	// Parse signal - only if explicitly provided and not undefined/null
+	if signalVal := obj.Get("signal"); signalVal != nil && !goja.IsUndefined(signalVal) && !goja.IsNull(signalVal) {
+		// Additional safety check - make sure we can convert to object
+		if signalObj := signalVal.ToObject(vm); signalObj != nil {
+			// Try to get abort signal, but handle any panics gracefully
+			if signal := abort.GetAbortSignalFromJS(signalObj); signal != nil {
+				options.Signal = signal
+			}
 		}
 	}
 

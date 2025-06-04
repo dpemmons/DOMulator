@@ -860,6 +860,50 @@ func (db *DOMBindings) extractEvent(value goja.Value) dom.Event {
 
 // SetupBrowserAPIs sets up browser APIs like CustomEvent, URL, URLSearchParams, History, and Performance
 func (db *DOMBindings) SetupBrowserAPIs() {
+	// DOMException constructor
+	db.vm.Set("DOMException", func(call goja.ConstructorCall) *goja.Object {
+		message := ""
+		name := "Error"
+
+		if len(call.Arguments) > 0 && !goja.IsUndefined(call.Arguments[0]) {
+			message = call.Arguments[0].String()
+		}
+		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Arguments[1]) {
+			name = call.Arguments[1].String()
+		}
+
+		exc := dom.NewDOMException(message, name)
+		return db.wrapDOMException(exc)
+	})
+
+	// Add DOMException constants to the constructor
+	domExceptionConstructor := db.vm.Get("DOMException").(*goja.Object)
+	domExceptionConstructor.Set("INDEX_SIZE_ERR", dom.INDEX_SIZE_ERR)
+	domExceptionConstructor.Set("DOMSTRING_SIZE_ERR", dom.DOMSTRING_SIZE_ERR)
+	domExceptionConstructor.Set("HIERARCHY_REQUEST_ERR", dom.HIERARCHY_REQUEST_ERR)
+	domExceptionConstructor.Set("WRONG_DOCUMENT_ERR", dom.WRONG_DOCUMENT_ERR)
+	domExceptionConstructor.Set("INVALID_CHARACTER_ERR", dom.INVALID_CHARACTER_ERR)
+	domExceptionConstructor.Set("NO_DATA_ALLOWED_ERR", dom.NO_DATA_ALLOWED_ERR)
+	domExceptionConstructor.Set("NO_MODIFICATION_ALLOWED_ERR", dom.NO_MODIFICATION_ALLOWED_ERR)
+	domExceptionConstructor.Set("NOT_FOUND_ERR", dom.NOT_FOUND_ERR)
+	domExceptionConstructor.Set("NOT_SUPPORTED_ERR", dom.NOT_SUPPORTED_ERR)
+	domExceptionConstructor.Set("INUSE_ATTRIBUTE_ERR", dom.INUSE_ATTRIBUTE_ERR)
+	domExceptionConstructor.Set("INVALID_STATE_ERR", dom.INVALID_STATE_ERR)
+	domExceptionConstructor.Set("SYNTAX_ERR", dom.SYNTAX_ERR)
+	domExceptionConstructor.Set("INVALID_MODIFICATION_ERR", dom.INVALID_MODIFICATION_ERR)
+	domExceptionConstructor.Set("NAMESPACE_ERR", dom.NAMESPACE_ERR)
+	domExceptionConstructor.Set("INVALID_ACCESS_ERR", dom.INVALID_ACCESS_ERR)
+	domExceptionConstructor.Set("VALIDATION_ERR", dom.VALIDATION_ERR)
+	domExceptionConstructor.Set("TYPE_MISMATCH_ERR", dom.TYPE_MISMATCH_ERR)
+	domExceptionConstructor.Set("SECURITY_ERR", dom.SECURITY_ERR)
+	domExceptionConstructor.Set("NETWORK_ERR", dom.NETWORK_ERR)
+	domExceptionConstructor.Set("ABORT_ERR", dom.ABORT_ERR)
+	domExceptionConstructor.Set("URL_MISMATCH_ERR", dom.URL_MISMATCH_ERR)
+	domExceptionConstructor.Set("QUOTA_EXCEEDED_ERR", dom.QUOTA_EXCEEDED_ERR)
+	domExceptionConstructor.Set("TIMEOUT_ERR", dom.TIMEOUT_ERR)
+	domExceptionConstructor.Set("INVALID_NODE_TYPE_ERR", dom.INVALID_NODE_TYPE_ERR)
+	domExceptionConstructor.Set("DATA_CLONE_ERR", dom.DATA_CLONE_ERR)
+
 	// URL constructor
 	db.vm.Set("URL", func(call goja.ConstructorCall) *goja.Object {
 		if len(call.Arguments) < 1 {
@@ -959,6 +1003,33 @@ func (db *DOMBindings) wrapURL(goURL *url.URL) *goja.Object {
 	obj.Set("toJSON", func(call goja.FunctionCall) goja.Value {
 		return db.vm.ToValue(goURL.ToJSON())
 	})
+
+	return obj
+}
+
+// wrapDOMException wraps a DOMException for JavaScript access
+func (db *DOMBindings) wrapDOMException(exc *dom.DOMException) *goja.Object {
+	obj := db.vm.NewObject()
+
+	// DOMException properties
+	obj.Set("name", exc.Name())
+	obj.Set("message", exc.Message())
+	obj.Set("code", exc.Code())
+
+	// toString method
+	obj.Set("toString", func(call goja.FunctionCall) goja.Value {
+		return db.vm.ToValue(exc.Error())
+	})
+
+	// Make it instanceof DOMException in JavaScript
+	domExceptionConstructor := db.vm.Get("DOMException")
+	if domExceptionConstructor != nil {
+		if prototype := domExceptionConstructor.(*goja.Object).Get("prototype"); prototype != nil {
+			if protoObj := prototype.ToObject(db.vm); protoObj != nil {
+				obj.SetPrototype(protoObj)
+			}
+		}
+	}
 
 	return obj
 }

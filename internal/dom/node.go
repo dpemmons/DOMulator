@@ -1,8 +1,6 @@
 package dom
 
 import (
-	"errors"
-
 	"github.com/dop251/goja"
 )
 
@@ -251,7 +249,12 @@ func (n *nodeImpl) NextSibling() Node {
 
 func (n *nodeImpl) AppendChild(child Node) Node {
 	if child == nil {
-		return nil
+		panic(NewNotFoundError("child cannot be null"))
+	}
+
+	// Validate hierarchy constraints
+	if err := n.validateHierarchy(child); err != nil {
+		panic(err)
 	}
 
 	// Handle DocumentFragment insertion
@@ -284,8 +287,14 @@ func (n *nodeImpl) AppendChild(child Node) Node {
 
 func (n *nodeImpl) RemoveChild(child Node) Node {
 	if child == nil {
-		return nil
+		panic(NewNotFoundError("child cannot be null"))
 	}
+
+	// Check if child is actually a child of this node
+	if child.ParentNode() != n.self {
+		panic(NewNotFoundError("Node is not a child of this parent"))
+	}
+
 	for i, c := range n.childNodes {
 		if c == child {
 			n.childNodes = append(n.childNodes[:i], n.childNodes[i+1:]...)
@@ -299,16 +308,28 @@ func (n *nodeImpl) RemoveChild(child Node) Node {
 			return child
 		}
 	}
-	return nil // Child not found
+
+	// This should never happen given the parent check above, but just in case
+	panic(NewNotFoundError("Child not found in parent's child list"))
 }
 
 func (n *nodeImpl) InsertBefore(newChild, refChild Node) Node {
 	if newChild == nil {
-		return nil
+		panic(NewNotFoundError("newChild cannot be null"))
 	}
 
 	if refChild == nil {
 		return n.AppendChild(newChild)
+	}
+
+	// Validate that refChild is actually a child of this node
+	if refChild.ParentNode() != n.self {
+		panic(NewNotFoundError("refChild is not a child of this node"))
+	}
+
+	// Validate hierarchy constraints
+	if err := n.validateHierarchy(newChild); err != nil {
+		panic(err)
 	}
 
 	// Handle DocumentFragment insertion
@@ -401,8 +422,22 @@ func (n *nodeImpl) InsertBefore(newChild, refChild Node) Node {
 }
 
 func (n *nodeImpl) ReplaceChild(newChild, oldChild Node) Node {
-	if newChild == nil || oldChild == nil {
-		return nil
+	if newChild == nil {
+		panic(NewNotFoundError("newChild cannot be null"))
+	}
+
+	if oldChild == nil {
+		panic(NewNotFoundError("oldChild cannot be null"))
+	}
+
+	// Validate that oldChild is actually a child of this node
+	if oldChild.ParentNode() != n.self {
+		panic(NewNotFoundError("oldChild is not a child of this node"))
+	}
+
+	// Validate hierarchy constraints for newChild, excluding oldChild from uniqueness checks
+	if err := n.validateHierarchyWithExclusion(newChild, oldChild); err != nil {
+		panic(err)
 	}
 
 	// Handle DocumentFragment replacement
@@ -531,6 +566,81 @@ func (n *nodeImpl) setOwnerDocument(doc *Document) {
 	}
 }
 
+// validateHierarchy implements the DOM hierarchy validation rules
+func (n *nodeImpl) validateHierarchy(child Node) *DOMException {
+	return n.validateHierarchyWithExclusion(child, nil)
+}
+
+// validateHierarchyWithExclusion validates hierarchy but excludes a specific node from uniqueness checks
+// This is used during replacement operations where the old node is being replaced
+func (n *nodeImpl) validateHierarchyWithExclusion(child Node, excludeNode Node) *DOMException {
+	// Check for circular references (child cannot be an ancestor of n.self)
+	current := n.self
+	for current != nil {
+		if current == child {
+			return NewHierarchyRequestError("Cannot insert a node as a child of itself or its ancestors")
+		}
+		current = current.ParentNode()
+	}
+
+	// Check node type compatibility based on WHATWG DOM specification
+	parentType := n.nodeType
+	childType := child.NodeType()
+
+	switch parentType {
+	case DocumentNode:
+		// Document can only have one Element, one DocumentType, and PIs/Comments
+		switch childType {
+		case ElementNode:
+			// Check if Document already has an element child (excluding the node being replaced)
+			for _, existing := range n.childNodes {
+				if existing.NodeType() == ElementNode && existing != excludeNode {
+					return NewHierarchyRequestError("Document can only have one Element child")
+				}
+			}
+		case DocumentTypeNode:
+			// Check if Document already has a doctype child (excluding the node being replaced)
+			for _, existing := range n.childNodes {
+				if existing.NodeType() == DocumentTypeNode && existing != excludeNode {
+					return NewHierarchyRequestError("Document can only have one DocumentType child")
+				}
+			}
+		case ProcessingInstructionNode, CommentNode:
+			// These are allowed
+		case DocumentFragmentNode:
+			// Fragment contents will be validated individually
+		default:
+			return NewHierarchyRequestError("Document cannot contain this node type")
+		}
+
+	case DocumentTypeNode, TextNode, CDataSectionNode, ProcessingInstructionNode, CommentNode:
+		// These node types cannot have children
+		return NewHierarchyRequestError("This node type cannot have children")
+
+	case ElementNode, DocumentFragmentNode:
+		// Elements and DocumentFragments can contain Elements, Text, CData, PI, Comments
+		switch childType {
+		case ElementNode, TextNode, CDataSectionNode, ProcessingInstructionNode, CommentNode:
+			// These are allowed
+		case DocumentFragmentNode:
+			// Fragment contents will be validated individually
+		case DocumentNode, DocumentTypeNode:
+			return NewHierarchyRequestError("Elements cannot contain Document or DocumentType nodes")
+		default:
+			return NewHierarchyRequestError("Elements cannot contain this node type")
+		}
+
+	case AttributeNode:
+		// Attributes cannot have children
+		return NewHierarchyRequestError("Attribute nodes cannot have children")
+
+	default:
+		return NewHierarchyRequestError("Unknown node type cannot have children")
+	}
+
+	return nil
+}
+
 // registerMutationObserver registers a mutation observer for this node
 func (n *nodeImpl) registerMutationObserver(observer *MutationObserver, options MutationObserverInit) {
 	// Get the document's observer registry
@@ -596,7 +706,7 @@ func convertNodesToNode(nodes []interface{}, doc *Document) (Node, error) {
 			textNode := NewText(v, doc)
 			convertedNodes = append(convertedNodes, textNode)
 		default:
-			return nil, errors.New("invalid node type: expected Node or string")
+			return nil, NewInvalidCharacterError("invalid node type: expected Node or string")
 		}
 	}
 
@@ -678,12 +788,12 @@ func findViableNextSibling(node Node, excludeNodes []Node) Node {
 // This is used by the ChildNode methods to safely insert nodes.
 func preInsert(node, parent, child Node) error {
 	if parent == nil {
-		return errors.New("parent is null")
+		return NewNotFoundError("parent is null")
 	}
 
 	// Validate that the node can be inserted
 	if !canInsertNode(node, parent) {
-		return errors.New("node cannot be inserted at the specified point in the hierarchy")
+		return NewHierarchyRequestError("node cannot be inserted at the specified point in the hierarchy")
 	}
 
 	// Insert the node

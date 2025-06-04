@@ -76,15 +76,15 @@ func TestNodeRemoveChild(t *testing.T) {
 		t.Errorf("Expected parent's first child to be child2, got %v", parent.FirstChild())
 	}
 
-	// Try removing a non-existent child
+	// Try removing a non-existent child - should panic with NotFoundError
 	nonExistentChild := NewElement("a", doc)
-	removedNonExistent := parent.RemoveChild(nonExistentChild)
-	if removedNonExistent != nil {
-		t.Errorf("Expected removing non-existent child to return nil, got %v", removedNonExistent)
-	}
-	if len(parent.ChildNodes()) != 1 {
-		t.Errorf("Expected parent to still have 1 child, got %d", len(parent.ChildNodes()))
-	}
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("Expected panic when removing non-existent child")
+		}
+	}()
+	parent.RemoveChild(nonExistentChild)
+	t.Errorf("Should have panicked before reaching this point")
 }
 
 func TestNodeInsertBefore(t *testing.T) {

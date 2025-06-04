@@ -383,14 +383,14 @@ func TestHTMLCollection_CacheInvalidation(t *testing.T) {
 
 	// Modify a different part of the tree - should still invalidate cache
 	otherRoot := doc.CreateElement("section")
-	doc.AppendChild(otherRoot)
+	root.AppendChild(otherRoot)
 
 	span2 := doc.CreateElement("span")
 	otherRoot.AppendChild(span2)
 
-	// Original collection should still work correctly
-	if collection.Length() != 1 {
-		t.Errorf("Expected length 1 - other modifications shouldn't affect this collection")
+	// Original collection should now see 2 spans (span and span2)
+	if collection.Length() != 2 {
+		t.Errorf("Expected length 2 after adding span2 to subtree, got %d", collection.Length())
 	}
 }
 
