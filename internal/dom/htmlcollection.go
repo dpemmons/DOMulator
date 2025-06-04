@@ -1,6 +1,7 @@
 package dom
 
 import (
+	"strings"
 	"sync"
 )
 
@@ -182,15 +183,33 @@ func NewElementsByTagNameNSCollection(root Node, namespaceURI, localName string)
 	return NewHTMLCollection(root, filter)
 }
 
-// NewElementsByClassNameCollection creates an HTMLCollection that contains all elements with the specified class name
-func NewElementsByClassNameCollection(root Node, className string) *HTMLCollection {
+// NewElementsByClassNameCollection creates an HTMLCollection that contains all elements with the specified class names
+func NewElementsByClassNameCollection(root Node, classNames string) *HTMLCollection {
 	filter := func(node Node) bool {
 		if elem, ok := node.(*Element); ok {
-			return elem.HasClass(className)
+			// Split class names by whitespace and check that element has ALL classes
+			return hasAllClasses(elem, classNames)
 		}
 		return false
 	}
 	return NewHTMLCollection(root, filter)
+}
+
+// hasAllClasses checks if an element has all the classes in the space-separated list
+func hasAllClasses(elem *Element, classNames string) bool {
+	// Split by whitespace characters
+	classes := strings.Fields(classNames)
+	if len(classes) == 0 {
+		return false
+	}
+
+	// Check that the element has ALL of the specified classes
+	for _, className := range classes {
+		if !elem.HasClass(className) {
+			return false
+		}
+	}
+	return true
 }
 
 // NewElementsByNameCollection creates an HTMLCollection that contains all elements with the specified name attribute

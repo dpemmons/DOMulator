@@ -20,9 +20,18 @@ type Document struct {
 	signalSlots                     []*Element                 // For slotchange events
 	mutationStateMutex              sync.Mutex                 // Protects mutation observer state
 
-	// Add document-specific properties here
-	// For example, a reference to the window object, if we implement one
-	// defaultView *Window
+	// Document properties per WHATWG DOM specification
+	implementation *DOMImplementation // DOMImplementation object
+	url            string             // Document's URL
+	documentURI    string             // Alias for URL
+	compatMode     string             // "BackCompat" or "CSS1Compat"
+	characterSet   string             // Document's encoding
+	charset        string             // Legacy alias for characterSet
+	inputEncoding  string             // Legacy alias for characterSet
+	contentType    string             // Document's content type
+	doctype        *DocumentType      // DocumentType node reference
+	documentType   string             // Document type ("xml" or "html")
+	mode           string             // Document mode ("no-quirks", "quirks", "limited-quirks")
 }
 
 // NewDocument creates a new Document node.
@@ -35,6 +44,18 @@ func NewDocument() *Document {
 		observerRegistry:         NewObserverRegistry(),
 		pendingMutationObservers: make(map[*MutationObserver]bool),
 		signalSlots:              make([]*Element, 0),
+
+		// Initialize document properties per WHATWG DOM specification defaults
+		implementation: NewDOMImplementation(),
+		url:            "about:blank",
+		documentURI:    "about:blank",
+		compatMode:     "CSS1Compat", // no-quirks mode
+		characterSet:   "UTF-8",
+		charset:        "UTF-8",
+		inputEncoding:  "UTF-8",
+		contentType:    "application/xml",
+		documentType:   "xml",
+		mode:           "no-quirks",
 	}
 	doc.ownerDocument = doc // A document is its own owner document
 	doc.nodeImpl.self = doc // Set the self reference
@@ -43,6 +64,61 @@ func NewDocument() *Document {
 
 // OwnerDocument returns nil for documents per spec
 func (d *Document) OwnerDocument() *Document {
+	return nil
+}
+
+// Specification-required getter methods per WHATWG DOM
+
+// Implementation returns the DOMImplementation object
+func (d *Document) Implementation() *DOMImplementation {
+	return d.implementation
+}
+
+// URL returns the document's URL, serialized
+func (d *Document) URL() string {
+	return d.url
+}
+
+// DocumentURI returns the document's URL (alias for URL)
+func (d *Document) DocumentURI() string {
+	return d.documentURI
+}
+
+// CompatMode returns "BackCompat" if mode is "quirks", otherwise "CSS1Compat"
+func (d *Document) CompatMode() string {
+	if d.mode == "quirks" {
+		return "BackCompat"
+	}
+	return "CSS1Compat"
+}
+
+// CharacterSet returns the document's encoding
+func (d *Document) CharacterSet() string {
+	return d.characterSet
+}
+
+// Charset returns the document's encoding (legacy alias for CharacterSet)
+func (d *Document) Charset() string {
+	return d.charset
+}
+
+// InputEncoding returns the document's encoding (legacy alias for CharacterSet)
+func (d *Document) InputEncoding() string {
+	return d.inputEncoding
+}
+
+// ContentType returns the document's content type
+func (d *Document) ContentType() string {
+	return d.contentType
+}
+
+// Doctype returns the doctype or null if there is none
+func (d *Document) Doctype() *DocumentType {
+	for _, child := range d.childNodes {
+		if doctype, ok := child.(*DocumentType); ok {
+			return doctype
+		}
+	}
 	return nil
 }
 
@@ -69,6 +145,204 @@ func (d *Document) CreateComment(data string) *Comment {
 // CreateDocumentFragment creates a new document fragment
 func (d *Document) CreateDocumentFragment() *DocumentFragment {
 	return NewDocumentFragment(d)
+}
+
+// CreateCDATASection creates a new CDATASection node with the given data
+func (d *Document) CreateCDATASection(data string) (*CDATASection, error) {
+	// If this is an HTML document, throw a "NotSupportedError" DOMException
+	if d.documentType == "html" {
+		return nil, NewNotSupportedError("CDATA sections are not supported in HTML documents")
+	}
+
+	// If data contains the string "]]>", throw an "InvalidCharacterError" DOMException
+	if strings.Contains(data, "]]>") {
+		return nil, NewInvalidCharacterError("data contains the string ']]>'")
+	}
+
+	return NewCDATASection(data, d), nil
+}
+
+// CreateProcessingInstruction creates a new ProcessingInstruction node
+func (d *Document) CreateProcessingInstruction(target, data string) (*ProcessingInstruction, error) {
+	// If target does not match the Name production, throw an "InvalidCharacterError" DOMException
+	if target == "" {
+		return nil, NewInvalidCharacterError("target cannot be empty")
+	}
+
+	// If data contains "?>", throw an "InvalidCharacterError" DOMException
+	if strings.Contains(data, "?>") {
+		return nil, NewInvalidCharacterError("data contains the string '?>'")
+	}
+
+	return NewProcessingInstruction(target, data, d), nil
+}
+
+// ImportNode returns a copy of node. If deep is true, the copy also includes the node's descendants
+func (d *Document) ImportNode(node Node, deep bool) (Node, error) {
+	// If node is a document or shadow root, throw a "NotSupportedError" DOMException
+	if node.NodeType() == DocumentNode {
+		return nil, NewNotSupportedError("cannot import a document node")
+	}
+
+	// TODO: Add shadow root check when shadow DOM is implemented
+
+	// Return the result of cloning a node with document set to this and deep set to deep
+	return CloneNodeSpec(node, deep), nil
+}
+
+// AdoptNode moves node from another document and returns it
+func (d *Document) AdoptNode(node Node) (Node, error) {
+	// If node is a document, throw a "NotSupportedError" DOMException
+	if node.NodeType() == DocumentNode {
+		return nil, NewNotSupportedError("cannot adopt a document node")
+	}
+
+	// TODO: Add shadow root check when shadow DOM is implemented
+
+	// If node is a DocumentFragment node whose host is non-null, return
+	if fragment, ok := node.(*DocumentFragment); ok {
+		// TODO: Check host when shadow DOM is implemented
+		_ = fragment
+	}
+
+	// Adopt node into this document
+	d.adoptNode(node)
+
+	return node, nil
+}
+
+// adoptNode implements the "adopt" algorithm from the specification
+func (d *Document) adoptNode(node Node) {
+	oldDocument := node.OwnerDocument()
+
+	// If node's parent is non-null, remove node
+	if parent := node.ParentNode(); parent != nil {
+		parent.RemoveChild(node)
+	}
+
+	// If document is not oldDocument, update ownership
+	if d != oldDocument {
+		d.adoptNodeRecursive(node)
+	}
+}
+
+// adoptNodeRecursive recursively adopts a node and its descendants
+func (d *Document) adoptNodeRecursive(node Node) {
+	// Set node's owner document to this document using type-specific setters
+	switch n := node.(type) {
+	case *Element:
+		n.ownerDocument = d
+	case *Text:
+		n.ownerDocument = d
+	case *Comment:
+		n.ownerDocument = d
+	case *CDATASection:
+		n.ownerDocument = d
+	case *ProcessingInstruction:
+		n.ownerDocument = d
+	case *DocumentFragment:
+		n.ownerDocument = d
+	case *Attr:
+		n.ownerDocument = d
+	case *DocumentType:
+		n.ownerDocument = d
+	}
+
+	// Recursively adopt all child nodes
+	children := node.ChildNodes()
+	for i := 0; i < children.Length(); i++ {
+		d.adoptNodeRecursive(children.Item(i))
+	}
+}
+
+// CreateAttribute creates a new attribute with the given local name
+func (d *Document) CreateAttribute(localName string) (*Attr, error) {
+	// If localName does not match the Name production, throw an "InvalidCharacterError" DOMException
+	if localName == "" {
+		return nil, NewInvalidCharacterError("localName cannot be empty")
+	}
+
+	// If this is an HTML document, set localName to localName in ASCII lowercase
+	if d.documentType == "html" {
+		localName = strings.ToLower(localName)
+	}
+
+	return NewAttr(localName, "", d), nil
+}
+
+// CreateAttributeNS creates a new attribute with the given namespace and qualified name
+func (d *Document) CreateAttributeNS(namespace, qualifiedName string) (*Attr, error) {
+	// TODO: Implement namespace validation when needed
+	if qualifiedName == "" {
+		return nil, NewInvalidCharacterError("qualifiedName cannot be empty")
+	}
+
+	return NewAttr(qualifiedName, "", d), nil
+}
+
+// CreateEvent creates an event given interface (legacy method)
+func (d *Document) CreateEvent(interfaceName string) (interface{}, error) {
+	// Convert to lowercase for case-insensitive comparison
+	interfaceName = strings.ToLower(interfaceName)
+
+	// Map interface names to constructors per specification
+	switch interfaceName {
+	case "event", "events", "htmlevents", "svgevents":
+		// Return a basic Event placeholder
+		return map[string]interface{}{"type": "Event"}, nil
+	case "customevent":
+		// Return a CustomEvent placeholder
+		return map[string]interface{}{"type": "CustomEvent"}, nil
+	case "mouseevent", "mouseevents":
+		// Return a MouseEvent placeholder
+		return map[string]interface{}{"type": "MouseEvent"}, nil
+	case "keyboardevent":
+		// Return a KeyboardEvent placeholder
+		return map[string]interface{}{"type": "KeyboardEvent"}, nil
+	case "uievent", "uievents":
+		// Return a UIEvent placeholder
+		return map[string]interface{}{"type": "UIEvent"}, nil
+	default:
+		return nil, NewNotSupportedError("interface not supported: " + interfaceName)
+	}
+}
+
+// CreateRange creates a new live range
+func (d *Document) CreateRange() interface{} {
+	// TODO: Implement Range when available
+	// For now, return a placeholder
+	return map[string]interface{}{
+		"startContainer": d,
+		"startOffset":    0,
+		"endContainer":   d,
+		"endOffset":      0,
+		"collapsed":      true,
+	}
+}
+
+// CreateNodeIterator creates a new NodeIterator
+func (d *Document) CreateNodeIterator(root Node, whatToShow uint32, filter interface{}) interface{} {
+	// TODO: Implement NodeIterator when available
+	// For now, return a placeholder
+	return map[string]interface{}{
+		"root":                       root,
+		"whatToShow":                 whatToShow,
+		"filter":                     filter,
+		"referenceNode":              root,
+		"pointerBeforeReferenceNode": true,
+	}
+}
+
+// CreateTreeWalker creates a new TreeWalker
+func (d *Document) CreateTreeWalker(root Node, whatToShow uint32, filter interface{}) interface{} {
+	// TODO: Implement TreeWalker when available
+	// For now, return a placeholder
+	return map[string]interface{}{
+		"root":        root,
+		"whatToShow":  whatToShow,
+		"filter":      filter,
+		"currentNode": root,
+	}
 }
 
 // GetElementById returns the element with the specified ID
