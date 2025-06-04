@@ -229,6 +229,12 @@ func (df *DocumentFragment) matchesSimpleSelector(elem *Element, selector string
 	return matchSimpleSelector(elem, selector)
 }
 
+// CloneNode creates a copy of the document fragment using the spec-compliant cloning implementation.
+func (df *DocumentFragment) CloneNode(deep bool) Node {
+	// Use the spec-compliant cloning implementation
+	return CloneNodeSpec(df, deep)
+}
+
 // toJS is a placeholder for JavaScript binding.
 func (df *DocumentFragment) toJS(vm *goja.Runtime) goja.Value {
 	// This will be implemented later when integrating with Goja

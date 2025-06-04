@@ -23,12 +23,19 @@ func NewProcessingInstruction(target, data string, doc *Document) *ProcessingIns
 		},
 		target: target,
 	}
+	pi.self = pi
 	return pi
 }
 
 // Target returns the target of the processing instruction.
 func (pi *ProcessingInstruction) Target() string {
 	return pi.target
+}
+
+// CloneNode creates a copy of the processing instruction node using the spec-compliant cloning implementation.
+func (pi *ProcessingInstruction) CloneNode(deep bool) Node {
+	// Use the spec-compliant cloning implementation
+	return CloneNodeSpec(pi, deep)
 }
 
 // toJS is a placeholder for JavaScript binding.

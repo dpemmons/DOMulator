@@ -13,8 +13,8 @@ func TestDocumentCreation(t *testing.T) {
 	if doc.NodeName() != "#document" {
 		t.Errorf("Expected node name '#document', got %s", doc.NodeName())
 	}
-	if doc.OwnerDocument() != doc {
-		t.Errorf("Expected owner document to be itself")
+	if doc.OwnerDocument() != nil {
+		t.Errorf("Expected owner document to be nil per WHATWG DOM spec")
 	}
 	if doc.ParentNode() != nil {
 		t.Errorf("Expected parent node to be nil")

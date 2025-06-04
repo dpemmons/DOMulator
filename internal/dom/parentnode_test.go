@@ -168,8 +168,8 @@ func TestParentNodePrepend(t *testing.T) {
 		if parent.FirstChild() != elem {
 			t.Error("Expected span element to be first child")
 		}
-		if parent.FirstChild().NodeName() != "span" {
-			t.Errorf("Expected first child node name 'span', got '%s'", parent.FirstChild().NodeName())
+		if parent.FirstChild().NodeName() != "SPAN" {
+			t.Errorf("Expected first child node name 'SPAN', got '%s'", parent.FirstChild().NodeName())
 		}
 	})
 
@@ -228,8 +228,8 @@ func TestParentNodeAppend(t *testing.T) {
 		if parent.LastChild() != elem {
 			t.Error("Expected em element to be last child")
 		}
-		if parent.LastChild().NodeName() != "em" {
-			t.Errorf("Expected last child node name 'em', got '%s'", parent.LastChild().NodeName())
+		if parent.LastChild().NodeName() != "EM" {
+			t.Errorf("Expected last child node name 'EM', got '%s'", parent.LastChild().NodeName())
 		}
 	})
 
@@ -645,7 +645,7 @@ func TestConvertNodesToNode(t *testing.T) {
 		if children.Item(1).NodeValue() != "text" {
 			t.Error("Expected second child to be text node")
 		}
-		if children.Item(2).NodeName() != "p" {
+		if children.Item(2).NodeName() != "P" {
 			t.Error("Expected third child to be p element")
 		}
 	})

@@ -176,10 +176,10 @@ func (t *Text) SplitText(offset int) *Text {
 	return newText
 }
 
-// CloneNode creates a copy of the text node.
+// CloneNode creates a copy of the text node using the spec-compliant cloning implementation.
 func (t *Text) CloneNode(deep bool) Node {
-	clone := NewText(t.nodeValue, t.ownerDocument)
-	return clone
+	// Use the spec-compliant cloning implementation
+	return CloneNodeSpec(t, deep)
 }
 
 // toJS is a placeholder for JavaScript binding.

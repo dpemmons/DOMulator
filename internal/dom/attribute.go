@@ -24,6 +24,7 @@ func NewAttr(name, value string, doc *Document) *Attr {
 		name:  name,
 		value: value,
 	}
+	attr.nodeImpl.self = attr // Set the self reference
 	return attr
 }
 
@@ -46,6 +47,12 @@ func (a *Attr) SetValue(value string) {
 // OwnerElement returns the Element that owns this attribute.
 func (a *Attr) OwnerElement() *Element {
 	return a.ownerElement
+}
+
+// CloneNode creates a copy of the attribute using the spec-compliant cloning implementation.
+func (a *Attr) CloneNode(deep bool) Node {
+	// Use the spec-compliant cloning implementation
+	return CloneNodeSpec(a, deep)
 }
 
 // toJS is a placeholder for JavaScript binding.

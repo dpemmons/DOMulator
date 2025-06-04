@@ -24,6 +24,12 @@ func NewCDATASection(data string, doc *Document) *CDATASection {
 	return cdata
 }
 
+// CloneNode creates a copy of the CDATA section using the spec-compliant cloning implementation.
+func (c *CDATASection) CloneNode(deep bool) Node {
+	// Use the spec-compliant cloning implementation
+	return CloneNodeSpec(c, deep)
+}
+
 // toJS is a placeholder for JavaScript binding.
 func (c *CDATASection) toJS(vm *goja.Runtime) goja.Value {
 	// This will be implemented later when integrating with Goja

@@ -41,6 +41,11 @@ func NewDocument() *Document {
 	return doc
 }
 
+// OwnerDocument returns nil for documents per spec
+func (d *Document) OwnerDocument() *Document {
+	return nil
+}
+
 // CreateElement creates a new element with the given tag name
 func (d *Document) CreateElement(tagName string) *Element {
 	return NewElement(tagName, d)
@@ -601,6 +606,12 @@ func (d *Document) shouldNotifyForMutation(node, target Node, recordType string,
 	}
 
 	return true
+}
+
+// CloneNode creates a copy of the document using the spec-compliant cloning implementation.
+func (d *Document) CloneNode(deep bool) Node {
+	// Use the spec-compliant cloning implementation
+	return CloneNodeSpec(d, deep)
 }
 
 // toJS is a placeholder for JavaScript binding.

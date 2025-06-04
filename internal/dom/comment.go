@@ -6,21 +6,29 @@ import (
 
 // Comment represents a comment node in the DOM tree.
 type Comment struct {
-	nodeImpl
+	characterDataImpl
 }
 
 // NewComment creates a new Comment node.
 func NewComment(data string, doc *Document) *Comment {
 	comment := &Comment{
-		nodeImpl: nodeImpl{
-			nodeType:      CommentNode,
-			nodeName:      "#comment",
-			nodeValue:     data,
-			ownerDocument: doc,
+		characterDataImpl: characterDataImpl{
+			nodeImpl: nodeImpl{
+				nodeType:      CommentNode,
+				nodeName:      "#comment",
+				nodeValue:     data,
+				ownerDocument: doc,
+			},
 		},
 	}
-	comment.nodeImpl.self = comment // Set the self reference
+	comment.characterDataImpl.nodeImpl.self = comment // Set the self reference
 	return comment
+}
+
+// CloneNode creates a copy of the comment node using the spec-compliant cloning implementation.
+func (c *Comment) CloneNode(deep bool) Node {
+	// Use the spec-compliant cloning implementation
+	return CloneNodeSpec(c, deep)
 }
 
 // toJS is a placeholder for JavaScript binding.

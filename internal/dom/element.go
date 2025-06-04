@@ -48,16 +48,20 @@ func NewElement(tagName string, doc *Document) *Element {
 	// Parse qualified name for legacy compatibility
 	info := ParseQualifiedName(tagName)
 
-	// For HTML elements, default to HTML namespace if no namespace is specified
+	// NewElement does not automatically assign namespaces - use NewElementNS for that
 	namespaceURI := info.NamespaceURI
-	if namespaceURI == "" && isHTMLElement(tagName) {
-		namespaceURI = htmlNamespace
+
+	// According to DOM spec, Element NodeName should be "Its HTML-uppercased qualified name"
+	// This applies to known HTML elements even when namespace is not explicitly set
+	nodeName := tagName
+	if namespaceURI == htmlNamespace || (namespaceURI == "" && isHTMLElement(info.LocalName)) {
+		nodeName = strings.ToUpper(tagName)
 	}
 
 	elem := &Element{
 		nodeImpl: nodeImpl{
 			nodeType:      ElementNode,
-			nodeName:      tagName, // NodeName for Element is its tagName
+			nodeName:      nodeName, // NodeName for Element is its HTML-uppercased qualified name per spec
 			ownerDocument: doc,
 		},
 		namespaceURI: namespaceURI,
@@ -596,15 +600,15 @@ func (e *Element) TextContent() string {
 	return *e.textContent
 }
 
-// SetTextContent sets the text content of the element.
+// SetTextContent sets the text content of the element using the DOM specification algorithm.
 func (e *Element) SetTextContent(text string) {
-	// TODO: Implement proper text content setting
-	e.childNodes = nil
-	textNode := NewText(text, e.ownerDocument)
-	e.AppendChild(textNode)
-	e.innerHTML = nil     // Invalidate cached innerHTML
-	e.outerHTML = nil     // Invalidate cached outerHTML
-	e.textContent = &text // Invalidate cached textContent
+	// Use the spec-compliant implementation from nodeImpl
+	e.nodeImpl.SetTextContent(text)
+
+	// Invalidate cached properties
+	e.innerHTML = nil
+	e.outerHTML = nil
+	e.textContent = &text
 }
 
 // splitBySpace splits a string by whitespace characters
@@ -627,23 +631,10 @@ func splitBySpace(s string) []string {
 	return result
 }
 
-// CloneNode creates a copy of the element.
+// CloneNode creates a copy of the element using the spec-compliant cloning implementation.
 func (e *Element) CloneNode(deep bool) Node {
-	clone := NewElement(e.tagName, e.ownerDocument)
-
-	// Copy all attributes
-	for name, value := range e.attributes {
-		clone.SetAttribute(name, value)
-	}
-
-	// Copy children if deep clone
-	if deep {
-		for _, child := range e.childNodes {
-			clone.AppendChild(child.CloneNode(true))
-		}
-	}
-
-	return clone
+	// Use the spec-compliant cloning implementation
+	return CloneNodeSpec(e, deep)
 }
 
 // getEventListeners returns the event listeners map for use in event dispatching

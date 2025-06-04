@@ -24,6 +24,7 @@ func NewDocumentType(name, publicID, systemID string, doc *Document) *DocumentTy
 		publicID: publicID,
 		systemID: systemID,
 	}
+	dt.self = dt
 	return dt
 }
 
@@ -40,6 +41,12 @@ func (dt *DocumentType) PublicID() string {
 // SystemID returns the system ID of the document type.
 func (dt *DocumentType) SystemID() string {
 	return dt.systemID
+}
+
+// CloneNode creates a copy of the document type node using the spec-compliant cloning implementation.
+func (dt *DocumentType) CloneNode(deep bool) Node {
+	// Use the spec-compliant cloning implementation
+	return CloneNodeSpec(dt, deep)
 }
 
 // toJS is a placeholder for JavaScript binding.

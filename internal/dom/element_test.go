@@ -12,8 +12,8 @@ func TestElementCreation(t *testing.T) {
 	if elem.NodeType() != ElementNode {
 		t.Errorf("Expected node type %v, got %v", ElementNode, elem.NodeType())
 	}
-	if elem.NodeName() != "div" {
-		t.Errorf("Expected node name 'div', got %s", elem.NodeName())
+	if elem.NodeName() != "DIV" {
+		t.Errorf("Expected node name 'DIV', got %s", elem.NodeName())
 	}
 	if elem.TagName() != "div" {
 		t.Errorf("Expected tag name 'div', got %s", elem.TagName())
