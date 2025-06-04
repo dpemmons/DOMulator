@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/dop251/goja"
+	"github.com/dpemmons/DOMulator/internal/dom/collection"
 )
 
 // Element represents an element node in the DOM tree.
@@ -17,8 +18,8 @@ type Element struct {
 	localName    string
 	tagName      string // Computed from prefix and localName
 
-	attributes map[string]string // Map to store attributes
-	// classList      *ClassList    // To be implemented
+	attributes map[string]string        // Map to store attributes
+	classList  *collection.DOMTokenList // DOMTokenList for class attribute
 	// dataset        *Dataset      // To be implemented
 	// style          *CSSStyleDeclaration // To be implemented
 
@@ -281,20 +282,17 @@ func (e *Element) GetElementsByTagNameNS(namespaceURI, localName string) []*Elem
 	return elements
 }
 
+// ClassList returns the DOMTokenList for the class attribute
+func (e *Element) ClassList() *collection.DOMTokenList {
+	if e.classList == nil {
+		e.classList = collection.NewDOMTokenList(e, "class")
+	}
+	return e.classList
+}
+
 // HasClass returns true if the element has the specified class
 func (e *Element) HasClass(className string) bool {
-	classAttr := e.GetAttribute("class")
-	if classAttr == "" {
-		return false
-	}
-	// Simple implementation - split by spaces and check
-	classes := splitBySpace(classAttr)
-	for _, class := range classes {
-		if class == className {
-			return true
-		}
-	}
-	return false
+	return e.ClassList().Contains(className)
 }
 
 // GetElementsByTagName returns all descendant elements with the specified tag name
