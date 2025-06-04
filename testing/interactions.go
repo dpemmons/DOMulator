@@ -14,11 +14,11 @@ func (h *TestHarness) Click(selector string) *TestHarness {
 	}
 
 	elements := css.QuerySelectorAll(h.domulator.document, selector)
-	if len(elements) == 0 {
+	if elements.Length() == 0 {
 		panic(fmt.Sprintf("Cannot click: no elements matching selector '%s' found", selector))
 	}
 
-	element := elements[0]
+	element := elements.Item(0)
 
 	// Create and dispatch a click event
 	clickEvent := dom.NewEvent("click", true, true)
@@ -33,11 +33,11 @@ func (h *TestHarness) DoubleClick(selector string) *TestHarness {
 	}
 
 	elements := css.QuerySelectorAll(h.domulator.document, selector)
-	if len(elements) == 0 {
+	if elements.Length() == 0 {
 		panic(fmt.Sprintf("Cannot double-click: no elements matching selector '%s' found", selector))
 	}
 
-	element := elements[0]
+	element := elements.Item(0)
 
 	// Create and dispatch a dblclick event
 	dblClickEvent := dom.NewEvent("dblclick", true, true)
@@ -52,11 +52,11 @@ func (h *TestHarness) Type(selector, text string) *TestHarness {
 	}
 
 	elements := css.QuerySelectorAll(h.domulator.document, selector)
-	if len(elements) == 0 {
+	if elements.Length() == 0 {
 		panic(fmt.Sprintf("Cannot type: no elements matching selector '%s' found", selector))
 	}
 
-	element := elements[0]
+	element := elements.Item(0)
 
 	// Set the value attribute
 	if elem, ok := element.(*dom.Element); ok {
@@ -83,11 +83,11 @@ func (h *TestHarness) Focus(selector string) *TestHarness {
 	}
 
 	elements := css.QuerySelectorAll(h.domulator.document, selector)
-	if len(elements) == 0 {
+	if elements.Length() == 0 {
 		panic(fmt.Sprintf("Cannot focus: no elements matching selector '%s' found", selector))
 	}
 
-	element := elements[0]
+	element := elements.Item(0)
 
 	// Create and dispatch focus event
 	focusEvent := dom.NewEvent("focus", false, false)
@@ -102,11 +102,11 @@ func (h *TestHarness) Blur(selector string) *TestHarness {
 	}
 
 	elements := css.QuerySelectorAll(h.domulator.document, selector)
-	if len(elements) == 0 {
+	if elements.Length() == 0 {
 		panic(fmt.Sprintf("Cannot blur: no elements matching selector '%s' found", selector))
 	}
 
-	element := elements[0]
+	element := elements.Item(0)
 
 	// Create and dispatch blur event
 	blurEvent := dom.NewEvent("blur", false, false)
@@ -121,11 +121,11 @@ func (h *TestHarness) Submit(selector string) *TestHarness {
 	}
 
 	elements := css.QuerySelectorAll(h.domulator.document, selector)
-	if len(elements) == 0 {
+	if elements.Length() == 0 {
 		panic(fmt.Sprintf("Cannot submit: no elements matching selector '%s' found", selector))
 	}
 
-	element := elements[0]
+	element := elements.Item(0)
 
 	// Create and dispatch submit event
 	submitEvent := dom.NewEvent("submit", true, true)
@@ -140,11 +140,11 @@ func (h *TestHarness) Check(selector string) *TestHarness {
 	}
 
 	elements := css.QuerySelectorAll(h.domulator.document, selector)
-	if len(elements) == 0 {
+	if elements.Length() == 0 {
 		panic(fmt.Sprintf("Cannot check: no elements matching selector '%s' found", selector))
 	}
 
-	element := elements[0]
+	element := elements.Item(0)
 
 	if elem, ok := element.(*dom.Element); ok {
 		elem.SetAttribute("checked", "checked")
@@ -166,11 +166,11 @@ func (h *TestHarness) Uncheck(selector string) *TestHarness {
 	}
 
 	elements := css.QuerySelectorAll(h.domulator.document, selector)
-	if len(elements) == 0 {
+	if elements.Length() == 0 {
 		panic(fmt.Sprintf("Cannot uncheck: no elements matching selector '%s' found", selector))
 	}
 
-	element := elements[0]
+	element := elements.Item(0)
 
 	if elem, ok := element.(*dom.Element); ok {
 		elem.SetAttribute("checked", "")
@@ -192,11 +192,11 @@ func (h *TestHarness) Select(selector, value string) *TestHarness {
 	}
 
 	elements := css.QuerySelectorAll(h.domulator.document, selector)
-	if len(elements) == 0 {
+	if elements.Length() == 0 {
 		panic(fmt.Sprintf("Cannot select: no elements matching selector '%s' found", selector))
 	}
 
-	element := elements[0]
+	element := elements.Item(0)
 
 	if elem, ok := element.(*dom.Element); ok {
 		elem.SetAttribute("value", value)
@@ -218,11 +218,11 @@ func (h *TestHarness) Hover(selector string) *TestHarness {
 	}
 
 	elements := css.QuerySelectorAll(h.domulator.document, selector)
-	if len(elements) == 0 {
+	if elements.Length() == 0 {
 		panic(fmt.Sprintf("Cannot hover: no elements matching selector '%s' found", selector))
 	}
 
-	element := elements[0]
+	element := elements.Item(0)
 
 	// Create and dispatch mouseenter event
 	mouseEnterEvent := dom.NewEvent("mouseenter", false, false)
@@ -241,11 +241,11 @@ func (h *TestHarness) Unhover(selector string) *TestHarness {
 	}
 
 	elements := css.QuerySelectorAll(h.domulator.document, selector)
-	if len(elements) == 0 {
+	if elements.Length() == 0 {
 		panic(fmt.Sprintf("Cannot unhover: no elements matching selector '%s' found", selector))
 	}
 
-	element := elements[0]
+	element := elements.Item(0)
 
 	// Create and dispatch mouseleave event
 	mouseLeaveEvent := dom.NewEvent("mouseleave", false, false)
@@ -264,11 +264,11 @@ func (h *TestHarness) TriggerEvent(selector, eventType string) *TestHarness {
 	}
 
 	elements := css.QuerySelectorAll(h.domulator.document, selector)
-	if len(elements) == 0 {
+	if elements.Length() == 0 {
 		panic(fmt.Sprintf("Cannot trigger event: no elements matching selector '%s' found", selector))
 	}
 
-	element := elements[0]
+	element := elements.Item(0)
 
 	// Create and dispatch custom event
 	customEvent := dom.NewEvent(eventType, true, true)

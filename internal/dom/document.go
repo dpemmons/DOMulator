@@ -13,6 +13,13 @@ type Document struct {
 	observerRegistry  *ObserverRegistry
 	modificationTime  int64 // Counter incremented on each DOM modification
 	modificationMutex sync.RWMutex
+
+	// MutationObserver agent-level state per WHATWG DOM spec
+	mutationObserverMicrotaskQueued bool
+	pendingMutationObservers        map[*MutationObserver]bool // Set implementation
+	signalSlots                     []*Element                 // For slotchange events
+	mutationStateMutex              sync.Mutex                 // Protects mutation observer state
+
 	// Add document-specific properties here
 	// For example, a reference to the window object, if we implement one
 	// defaultView *Window
@@ -25,7 +32,9 @@ func NewDocument() *Document {
 			nodeType: DocumentNode,
 			nodeName: "#document",
 		},
-		observerRegistry: NewObserverRegistry(),
+		observerRegistry:         NewObserverRegistry(),
+		pendingMutationObservers: make(map[*MutationObserver]bool),
+		signalSlots:              make([]*Element, 0),
 	}
 	doc.ownerDocument = doc // A document is its own owner document
 	doc.nodeImpl.self = doc // Set the self reference
@@ -390,6 +399,205 @@ func (d *Document) matchesSimpleSelector(elem *Element, selector string) bool {
 				return false
 			}
 		}
+	}
+
+	return true
+}
+
+// MutationObserver agent-level methods per WHATWG DOM specification
+
+// queueMutationObserverMicrotask implements the "queue a mutation observer microtask" algorithm
+func (d *Document) queueMutationObserverMicrotask() {
+	d.mutationStateMutex.Lock()
+	defer d.mutationStateMutex.Unlock()
+
+	// Step 1: If already queued, return
+	if d.mutationObserverMicrotaskQueued {
+		return
+	}
+
+	// Step 2: Set flag to true
+	d.mutationObserverMicrotaskQueued = true
+
+	// Step 3: Queue microtask to notify observers
+	// TODO: Integrate with event loop microtask queue when available
+	// For now, we'll use a goroutine to simulate microtask behavior
+	go func() {
+		d.notifyMutationObservers()
+	}()
+}
+
+// notifyMutationObservers implements the "notify mutation observers" algorithm
+func (d *Document) notifyMutationObservers() {
+	d.mutationStateMutex.Lock()
+
+	// Step 1: Set flag to false
+	d.mutationObserverMicrotaskQueued = false
+
+	// Step 2: Clone pending mutation observers
+	notifySet := make([]*MutationObserver, 0, len(d.pendingMutationObservers))
+	for mo := range d.pendingMutationObservers {
+		notifySet = append(notifySet, mo)
+	}
+
+	// Step 3: Empty pending mutation observers
+	d.pendingMutationObservers = make(map[*MutationObserver]bool)
+
+	// Step 4: Clone signal slots
+	signalSet := make([]*Element, len(d.signalSlots))
+	copy(signalSet, d.signalSlots)
+
+	// Step 5: Empty signal slots
+	d.signalSlots = d.signalSlots[:0]
+
+	d.mutationStateMutex.Unlock()
+
+	// Step 6: For each observer in notifySet
+	for _, mo := range notifySet {
+		// Step 6.1: Clone records and empty queue
+		records := mo.TakeRecords()
+
+		// Step 6.2: Remove transient registered observers
+		mo.removeTransientObservers()
+
+		// Step 6.3: If records not empty, invoke callback
+		if len(records) > 0 {
+			mo.callback(records, mo)
+		}
+	}
+
+	// Step 7: Fire slotchange events
+	for _, slot := range signalSet {
+		// TODO: Implement slotchange event when event system supports it
+		// For now, this is a placeholder for future slot implementation
+		_ = slot
+	}
+}
+
+// addPendingMutationObserver adds an observer to the pending set
+func (d *Document) addPendingMutationObserver(observer *MutationObserver) {
+	d.mutationStateMutex.Lock()
+	defer d.mutationStateMutex.Unlock()
+	d.pendingMutationObservers[observer] = true
+}
+
+// queueMutationRecord implements the "queue a mutation record" algorithm per WHATWG DOM spec
+func (d *Document) queueMutationRecord(recordType string, target Node, name, namespace, oldValue string,
+	addedNodes, removedNodes []Node, previousSibling, nextSibling Node) {
+
+	// Step 1: Create interested observers map
+	interestedObservers := make(map[*MutationObserver]string) // observer -> oldValue
+
+	// Step 2: Get inclusive ancestors
+	nodes := d.getInclusiveAncestors(target)
+
+	// Step 3: For each node and registered observer
+	for _, node := range nodes {
+		registeredObservers := node.getRegisteredObservers()
+		for _, registered := range registeredObservers {
+			options := registered.Options
+
+			// Check if observer is interested (exact spec conditions)
+			if d.shouldNotifyForMutation(node, target, recordType, options, name, namespace) {
+				mo := registered.Observer
+
+				// Determine if old value needed
+				if _, exists := interestedObservers[mo]; !exists {
+					if (recordType == "attributes" && options.AttributeOldValue) ||
+						(recordType == "characterData" && options.CharacterDataOldValue) {
+						interestedObservers[mo] = oldValue
+					} else {
+						interestedObservers[mo] = "" // Interested but no old value
+					}
+				}
+			}
+		}
+	}
+
+	// Step 4: For each interested observer
+	for observer, mappedOldValue := range interestedObservers {
+		// Create mutation record
+		record := &MutationRecord{
+			Type:               recordType,
+			Target:             target,
+			AddedNodes:         addedNodes,
+			RemovedNodes:       removedNodes,
+			PreviousSibling:    previousSibling,
+			NextSibling:        nextSibling,
+			AttributeName:      name,
+			AttributeNamespace: namespace,
+			OldValue:           mappedOldValue,
+		}
+
+		// Queue to observer
+		observer.queueMutationRecord(record)
+
+		// Add to pending observers
+		d.addPendingMutationObserver(observer)
+	}
+
+	// Step 5: Queue mutation observer microtask
+	d.queueMutationObserverMicrotask()
+}
+
+// queueTreeMutationRecord implements "queue a tree mutation record"
+func (d *Document) queueTreeMutationRecord(target Node, addedNodes, removedNodes []Node, previousSibling, nextSibling Node) {
+	// Assert: either addedNodes or removedNodes is not empty
+	if len(addedNodes) == 0 && len(removedNodes) == 0 {
+		panic("queueTreeMutationRecord: either addedNodes or removedNodes must not be empty")
+	}
+
+	// Queue a mutation record of "childList"
+	d.queueMutationRecord("childList", target, "", "", "", addedNodes, removedNodes, previousSibling, nextSibling)
+}
+
+// getInclusiveAncestors returns the target node and all its ancestors
+func (d *Document) getInclusiveAncestors(target Node) []Node {
+	var nodes []Node
+	current := target
+	for current != nil {
+		nodes = append(nodes, current)
+		current = current.ParentNode()
+	}
+	return nodes
+}
+
+// shouldNotifyForMutation determines if an observer should be notified based on spec conditions
+func (d *Document) shouldNotifyForMutation(node, target Node, recordType string, options MutationObserverInit, name, namespace string) bool {
+	// Check spec conditions - return false if any of these are true:
+
+	// 1. node is not target and options["subtree"] is false
+	if node != target && !options.Subtree {
+		return false
+	}
+
+	// 2. type is "attributes" and options["attributes"] either does not exist or is false
+	if recordType == "attributes" && !options.Attributes {
+		return false
+	}
+
+	// 3. type is "attributes", options["attributeFilter"] exists, and options["attributeFilter"] does not contain name or namespace is non-null
+	if recordType == "attributes" && len(options.AttributeFilter) > 0 {
+		found := false
+		for _, attr := range options.AttributeFilter {
+			if attr == name {
+				found = true
+				break
+			}
+		}
+		if !found || namespace != "" {
+			return false
+		}
+	}
+
+	// 4. type is "characterData" and options["characterData"] either does not exist or is false
+	if recordType == "characterData" && !options.CharacterData {
+		return false
+	}
+
+	// 5. type is "childList" and options["childList"] is false
+	if recordType == "childList" && !options.ChildList {
+		return false
 	}
 
 	return true

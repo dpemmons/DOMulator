@@ -19,7 +19,7 @@ func (h *TestHarness) AssertElement(selector string) *ElementAssertion {
 	return &ElementAssertion{
 		harness:  h,
 		selector: selector,
-		elements: elements,
+		elements: elements.ToSlice(),
 	}
 }
 
@@ -277,11 +277,11 @@ func (e *ElementAssertion) IsNotChecked() *ElementAssertion {
 func (d *DocumentAssertion) HasTitle(expected string) *DocumentAssertion {
 	// Find title element
 	titleElements := css.QuerySelectorAll(d.document, "title")
-	if len(titleElements) == 0 {
+	if titleElements.Length() == 0 {
 		panic(fmt.Sprintf("Expected document title to be '%s', but no title element found", expected))
 	}
 
-	actual := getTextContent(titleElements[0])
+	actual := getTextContent(titleElements.Item(0))
 	if actual != expected {
 		panic(fmt.Sprintf("Expected document title to be '%s', but got '%s'", expected, actual))
 	}
@@ -291,11 +291,11 @@ func (d *DocumentAssertion) HasTitle(expected string) *DocumentAssertion {
 // ContainsText asserts that the document body contains the specified text
 func (d *DocumentAssertion) ContainsText(expected string) *DocumentAssertion {
 	bodyElements := css.QuerySelectorAll(d.document, "body")
-	if len(bodyElements) == 0 {
+	if bodyElements.Length() == 0 {
 		panic(fmt.Sprintf("Expected document to contain text '%s', but no body element found", expected))
 	}
 
-	actual := getTextContent(bodyElements[0])
+	actual := getTextContent(bodyElements.Item(0))
 	if !strings.Contains(actual, expected) {
 		panic(fmt.Sprintf("Expected document to contain text '%s', but body text is '%s'", expected, actual))
 	}

@@ -153,10 +153,10 @@ func TestDescendantSelector(t *testing.T) {
 
 func TestMatches(t *testing.T) {
 	doc := createTestDOM()
-	containerDiv := doc.ChildNodes()[0].ChildNodes()[1].ChildNodes()[0] // body -> div#container
-	p1 := containerDiv.ChildNodes()[0]                                  // p.text-content
-	span1 := containerDiv.ChildNodes()[1].ChildNodes()[0]               // div.item -> span#span1.highlight
-	itemDiv2 := containerDiv.ChildNodes()[3]                            // div.item.active
+	containerDiv := doc.ChildNodes().Item(0).(*dom.Element).ChildNodes().Item(1).(*dom.Element).ChildNodes().Item(0).(*dom.Element) // body -> div#container
+	p1 := containerDiv.ChildNodes().Item(0)                                                                                         // p.text-content
+	span1 := containerDiv.ChildNodes().Item(1).(*dom.Element).ChildNodes().Item(0)                                                  // div.item -> span#span1.highlight
+	itemDiv2 := containerDiv.ChildNodes().Item(3)                                                                                   // div.item.active
 
 	tests := []struct {
 		name     string
@@ -184,7 +184,7 @@ func TestMatches(t *testing.T) {
 		{"Descendant: body p matches", p1, "body p", true},
 		{"Descendant: body div p matches", p1, "body div p", true},
 		{"Descendant: span p does not match", p1, "span p", false},
-		{"Descendant: #container .item matches", containerDiv.ChildNodes()[1], "#container .item", true},
+		{"Descendant: #container .item matches", containerDiv.ChildNodes().Item(1), "#container .item", true},
 	}
 
 	for _, tt := range tests {
@@ -217,7 +217,7 @@ func TestQuerySelector(t *testing.T) {
 		{"Select Active Item Div", doc, "div.active", "div"},
 		{"Select Link", doc, "a.link", "a"},
 		{"Non-existent selector", doc, "h1", ""},
-		{"Select from Element Root", doc.ChildNodes()[0].ChildNodes()[1].ChildNodes()[0], "p.text-content", "p"}, // From #container, select p
+		{"Select from Element Root", doc.ChildNodes().Item(0).(*dom.Element).ChildNodes().Item(1).(*dom.Element).ChildNodes().Item(0).(*dom.Element), "p.text-content", "p"}, // From #container, select p
 	}
 
 	for _, tt := range tests {
@@ -253,17 +253,18 @@ func TestQuerySelectorAll(t *testing.T) {
 		{"Select All Text Content Paragraphs", doc, "p.text-content", []string{"p", "p"}},
 		{"Select All Spans", doc, "span", []string{"span"}},
 		{"Non-existent selector", doc, "h1", []string{}},
-		{"Select All from Element Root", doc.ChildNodes()[0].ChildNodes()[1].ChildNodes()[0], "p", []string{"p", "p"}}, // From #container, select all p
+		{"Select All from Element Root", doc.ChildNodes().Item(0).(*dom.Element).ChildNodes().Item(1).(*dom.Element).ChildNodes().Item(0).(*dom.Element), "p", []string{"p", "p"}}, // From #container, select all p
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			foundNodes := QuerySelectorAll(tt.root, tt.selector)
-			if len(foundNodes) != len(tt.expected) {
-				t.Errorf("Selector %q: Expected %d nodes, got %d", tt.selector, len(tt.expected), len(foundNodes))
+			foundSlice := foundNodes.ToSlice()
+			if foundNodes.Length() != len(tt.expected) {
+				t.Errorf("Selector %q: Expected %d nodes, got %d", tt.selector, len(tt.expected), foundNodes.Length())
 				return
 			}
-			for i, node := range foundNodes {
+			for i, node := range foundSlice {
 				if node.NodeName() != tt.expected[i] {
 					t.Errorf("Selector %q: Expected node %q at index %d, got %q", tt.selector, tt.expected[i], i, node.NodeName())
 				}

@@ -5,17 +5,17 @@ import (
 	"sync/atomic"
 )
 
-// MutationRecord represents a single mutation to the DOM tree
+// MutationRecord represents a single mutation to the DOM tree per WHATWG DOM spec
 type MutationRecord struct {
-	Type            string // "childList", "attributes", "characterData"
-	Target          Node   // The node that was mutated
-	AddedNodes      []Node // Nodes that were added
-	RemovedNodes    []Node // Nodes that were removed
-	PreviousSibling Node   // Previous sibling of added/removed nodes
-	NextSibling     Node   // Next sibling of added/removed nodes
-	AttributeName   string // Name of changed attribute (for "attributes" type)
-	AttributeNS     string // Namespace of changed attribute
-	OldValue        string // Old value (for attributes/characterData if configured)
+	Type               string // "childList", "attributes", "characterData"
+	Target             Node   // The node that was mutated
+	AddedNodes         []Node // Nodes that were added
+	RemovedNodes       []Node // Nodes that were removed
+	PreviousSibling    Node   // Previous sibling of added/removed nodes
+	NextSibling        Node   // Next sibling of added/removed nodes
+	AttributeName      string // Name of changed attribute (for "attributes" type)
+	AttributeNamespace string // Namespace of changed attribute (renamed from AttributeNS for spec compliance)
+	OldValue           string // Old value (for attributes/characterData if configured)
 }
 
 // MutationObserverInit represents the configuration for a MutationObserver
@@ -27,10 +27,22 @@ type MutationObserverInit struct {
 	AttributeOldValue     bool     // Include old attribute values
 	CharacterDataOldValue bool     // Include old character data
 	AttributeFilter       []string // Only observe these attributes
+	// Internal fields to track if options were explicitly set
+	AttributesSet    bool // True if Attributes was explicitly set
+	CharacterDataSet bool // True if CharacterData was explicitly set
 }
 
 // MutationCallback is the function signature for mutation observer callbacks
 type MutationCallback func([]*MutationRecord, *MutationObserver)
+
+// RegisteredObserver represents a registered observer per WHATWG DOM spec
+type RegisteredObserver struct {
+	Observer *MutationObserver
+	Options  MutationObserverInit
+	// For transient observers only:
+	IsTransient bool
+	Source      *RegisteredObserver // The source registered observer
+}
 
 // MutationObserver observes mutations to DOM nodes
 type MutationObserver struct {
@@ -50,23 +62,44 @@ func NewMutationObserver(callback MutationCallback) *MutationObserver {
 	}
 }
 
-// Observe starts observing mutations on the target node
+// Observe starts observing mutations on the target node per WHATWG DOM spec
 func (mo *MutationObserver) Observe(target Node, options MutationObserverInit) {
-	mo.mu.Lock()
-	defer mo.mu.Unlock()
+	// Step 1: Auto-set attributes if attributeOldValue or attributeFilter exists and attributes was not explicitly set
+	if (options.AttributeOldValue || len(options.AttributeFilter) > 0) && !options.AttributesSet {
+		options.Attributes = true
+	}
 
-	// Validate options
+	// Step 2: Auto-set characterData if characterDataOldValue exists and characterData was not explicitly set
+	if options.CharacterDataOldValue && !options.CharacterDataSet {
+		options.CharacterData = true
+	}
+
+	// Step 3: Validate that at least one observation type is enabled
 	if !options.ChildList && !options.Attributes && !options.CharacterData {
 		panic("Must observe at least one of: childList, attributes, or characterData")
 	}
 
+	// Step 4: Validate attributeOldValue constraint (after potential auto-setting)
 	if options.AttributeOldValue && !options.Attributes {
 		panic("attributeOldValue requires attributes to be true")
 	}
 
+	// Step 5: Validate attributeFilter constraint (after potential auto-setting)
+	if len(options.AttributeFilter) > 0 && !options.Attributes {
+		panic("attributeFilter requires attributes to be true")
+	}
+
+	// Step 6: Validate characterDataOldValue constraint (after potential auto-setting)
 	if options.CharacterDataOldValue && !options.CharacterData {
 		panic("characterDataOldValue requires characterData to be true")
 	}
+
+	mo.mu.Lock()
+	defer mo.mu.Unlock()
+
+	// Steps 7-8: Check if already observing this target
+	// For now, we'll use the simplified approach of updating the options
+	// TODO: Implement full registered observer list per spec
 
 	// Register observer with the target node
 	mo.nodes[target] = options
@@ -253,6 +286,20 @@ func (or *ObserverRegistry) shouldNotifyObserver(observer *MutationObserver, obs
 	}
 
 	return true
+}
+
+// removeTransientObservers removes all transient registered observers for this observer
+func (mo *MutationObserver) removeTransientObservers() {
+	mo.mu.RLock()
+	defer mo.mu.RUnlock()
+
+	// For each node in the observer's node list
+	for node := range mo.nodes {
+		// TODO: Implement transient observer removal
+		// This would remove transient registered observers whose observer is mo
+		// from the node's registered observer list
+		_ = node // Placeholder for now
+	}
 }
 
 // ProcessMutationObservers processes all scheduled mutation observers

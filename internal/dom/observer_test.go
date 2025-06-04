@@ -489,16 +489,17 @@ func TestMutationObserver_ValidationErrors_AttributeOldValue(t *testing.T) {
 	callback := func(records []*MutationRecord, observer *MutationObserver) {}
 	observer := NewMutationObserver(callback)
 
-	// Test invalid options - attributeOldValue without attributes
+	// Test invalid options - attributeOldValue when attributes is explicitly false
 	defer func() {
 		if r := recover(); r == nil {
-			t.Errorf("Expected panic for attributeOldValue without attributes")
+			t.Errorf("Expected panic for attributeOldValue with explicitly false attributes")
 		}
 	}()
 
 	observer.Observe(root, MutationObserverInit{
 		ChildList:         true,
 		Attributes:        false,
+		AttributesSet:     true, // Explicitly set to false
 		AttributeOldValue: true,
 	})
 }
@@ -511,16 +512,17 @@ func TestMutationObserver_ValidationErrors_CharacterDataOldValue(t *testing.T) {
 	callback := func(records []*MutationRecord, observer *MutationObserver) {}
 	observer := NewMutationObserver(callback)
 
-	// Test invalid options - characterDataOldValue without characterData
+	// Test invalid options - characterDataOldValue when characterData is explicitly false
 	defer func() {
 		if r := recover(); r == nil {
-			t.Errorf("Expected panic for characterDataOldValue without characterData")
+			t.Errorf("Expected panic for characterDataOldValue with explicitly false characterData")
 		}
 	}()
 
 	observer.Observe(root, MutationObserverInit{
 		ChildList:             true,
 		CharacterData:         false,
+		CharacterDataSet:      true, // Explicitly set to false
 		CharacterDataOldValue: true,
 	})
 }

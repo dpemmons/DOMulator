@@ -135,7 +135,8 @@ func (db *DOMBindings) WrapDocument() *goja.Object {
 		nodeList := css.QuerySelectorAll(db.document, selector)
 		// Convert NodeList to []*Element
 		var elements []*dom.Element
-		for _, node := range nodeList {
+		nodeSlice := nodeList.ToSlice()
+		for _, node := range nodeSlice {
 			if element, ok := node.(*dom.Element); ok {
 				elements = append(elements, element)
 			}
@@ -274,7 +275,8 @@ func (db *DOMBindings) WrapElement(element *dom.Element) *goja.Object {
 		nodeList := css.QuerySelectorAll(element, selector)
 		// Convert NodeList to []*Element
 		var elements []*dom.Element
-		for _, node := range nodeList {
+		nodeSlice := nodeList.ToSlice()
+		for _, node := range nodeSlice {
 			if elem, ok := node.(*dom.Element); ok {
 				elements = append(elements, elem)
 			}
@@ -324,7 +326,7 @@ func (db *DOMBindings) WrapElement(element *dom.Element) *goja.Object {
 		// Update childNodes if this was afterbegin or beforeend
 		if position == "afterbegin" || position == "beforeend" {
 			children := db.vm.NewArray()
-			childNodes := element.ChildNodes()
+			childNodes := element.ChildNodes().ToSlice()
 			for i, childNode := range childNodes {
 				children.Set(strconv.Itoa(i), db.WrapNode(childNode))
 			}
@@ -634,7 +636,7 @@ func (db *DOMBindings) addNodeMethods(obj *goja.Object, node dom.Node) {
 
 		// Update the childNodes array
 		children := db.vm.NewArray()
-		childNodes := node.ChildNodes()
+		childNodes := node.ChildNodes().ToSlice()
 		for i, childNode := range childNodes {
 			children.Set(strconv.Itoa(i), db.WrapNode(childNode))
 		}
@@ -728,7 +730,7 @@ func (db *DOMBindings) addNodeMethods(obj *goja.Object, node dom.Node) {
 
 	// Children array - create initial empty array
 	children := db.vm.NewArray()
-	children.Set("length", len(node.ChildNodes()))
+	children.Set("length", node.ChildNodes().Length())
 	obj.Set("childNodes", children)
 }
 

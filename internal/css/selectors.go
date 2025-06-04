@@ -182,18 +182,18 @@ func QuerySelector(root dom.Node, selector string) dom.Node {
 }
 
 // QuerySelectorAll returns a NodeList of all elements within the given root that match the specified selector.
-func QuerySelectorAll(root dom.Node, selector string) dom.NodeList {
+func QuerySelectorAll(root dom.Node, selector string) *dom.NodeList {
 	sel, err := CompileSelector(selector)
 	if err != nil {
-		return nil // Or return error
+		return dom.NewNodeList(nil) // Return empty NodeList on error
 	}
 
-	var matchingNodes dom.NodeList
+	var matchingNodes []dom.Node
 	dom.Traverse(root, func(n dom.Node) bool {
 		if sel.MatchesDescendant(n) {
 			matchingNodes = append(matchingNodes, n)
 		}
 		return true // Continue traversal
 	})
-	return matchingNodes
+	return dom.NewNodeList(matchingNodes)
 }

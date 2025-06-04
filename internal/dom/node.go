@@ -57,6 +57,7 @@ type Node interface {
 	// Mutation Observer methods
 	registerMutationObserver(observer *MutationObserver, options MutationObserverInit)
 	unregisterMutationObserver(observer *MutationObserver)
+	getRegisteredObservers() []*RegisteredObserver
 
 	// Internal methods for DOM manipulation and JS binding
 	setParent(parent Node)
@@ -66,14 +67,15 @@ type Node interface {
 
 // nodeImpl provides a common base for all Node types.
 type nodeImpl struct {
-	nodeType       NodeType
-	nodeName       string
-	nodeValue      string
-	parentNode     Node
-	childNodes     []Node // Internal storage as slice
-	ownerDocument  *Document
-	self           Node // Reference to the containing Node
-	eventListeners map[string][]func(Event)
+	nodeType            NodeType
+	nodeName            string
+	nodeValue           string
+	parentNode          Node
+	childNodes          []Node // Internal storage as slice
+	ownerDocument       *Document
+	self                Node // Reference to the containing Node
+	eventListeners      map[string][]func(Event)
+	registeredObservers []*RegisteredObserver // Per-spec registered observer list
 }
 
 func (n *nodeImpl) AddEventListener(eventType string, listener func(Event)) {
@@ -716,6 +718,35 @@ func (n *nodeImpl) unregisterMutationObserver(observer *MutationObserver) {
 	// Get the document's observer registry
 	if n.ownerDocument != nil {
 		n.ownerDocument.getObserverRegistry().UnregisterObserver(n.self, observer)
+	}
+}
+
+// getRegisteredObservers returns the list of registered observers for this node
+func (n *nodeImpl) getRegisteredObservers() []*RegisteredObserver {
+	if n.registeredObservers == nil {
+		n.registeredObservers = make([]*RegisteredObserver, 0)
+	}
+	return n.registeredObservers
+}
+
+// addRegisteredObserver adds a registered observer to this node
+func (n *nodeImpl) addRegisteredObserver(ro *RegisteredObserver) {
+	if n.registeredObservers == nil {
+		n.registeredObservers = make([]*RegisteredObserver, 0)
+	}
+	n.registeredObservers = append(n.registeredObservers, ro)
+}
+
+// removeRegisteredObserver removes a registered observer from this node
+func (n *nodeImpl) removeRegisteredObserver(observer *MutationObserver) {
+	if n.registeredObservers == nil {
+		return
+	}
+
+	for i := len(n.registeredObservers) - 1; i >= 0; i-- {
+		if n.registeredObservers[i].Observer == observer {
+			n.registeredObservers = append(n.registeredObservers[:i], n.registeredObservers[i+1:]...)
+		}
 	}
 }
 
