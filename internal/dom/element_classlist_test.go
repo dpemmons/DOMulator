@@ -172,22 +172,22 @@ func TestElement_GetElementsByClassName_WithDOMTokenList(t *testing.T) {
 
 	// Test getElementsByClassName
 	class1Elements := parent.GetElementsByClassName("class1")
-	if len(class1Elements) != 2 {
-		t.Errorf("getElementsByClassName(class1) length = %d, want 2", len(class1Elements))
+	if class1Elements.Length() != 2 {
+		t.Errorf("getElementsByClassName(class1) length = %d, want 2", class1Elements.Length())
 	}
 
 	class2Elements := parent.GetElementsByClassName("class2")
-	if len(class2Elements) != 2 {
-		t.Errorf("getElementsByClassName(class2) length = %d, want 2", len(class2Elements))
+	if class2Elements.Length() != 2 {
+		t.Errorf("getElementsByClassName(class2) length = %d, want 2", class2Elements.Length())
 	}
 
 	class3Elements := parent.GetElementsByClassName("class3")
-	if len(class3Elements) != 1 {
-		t.Errorf("getElementsByClassName(class3) length = %d, want 1", len(class3Elements))
+	if class3Elements.Length() != 1 {
+		t.Errorf("getElementsByClassName(class3) length = %d, want 1", class3Elements.Length())
 	}
 
 	nonexistentElements := parent.GetElementsByClassName("nonexistent")
-	if len(nonexistentElements) != 0 {
-		t.Errorf("getElementsByClassName(nonexistent) length = %d, want 0", len(nonexistentElements))
+	if nonexistentElements.Length() != 0 {
+		t.Errorf("getElementsByClassName(nonexistent) length = %d, want 0", nonexistentElements.Length())
 	}
 }

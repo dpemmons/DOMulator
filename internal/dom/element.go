@@ -267,21 +267,6 @@ func (e *Element) RemoveAttributeNS(namespaceURI, localName string) {
 	}
 }
 
-// GetElementsByTagNameNS returns all descendant elements with the specified namespace URI and local name.
-func (e *Element) GetElementsByTagNameNS(namespaceURI, localName string) []*Element {
-	var elements []*Element
-	Traverse(e, func(node Node) bool {
-		if elem, ok := node.(*Element); ok && node != e { // Don't include self
-			if (namespaceURI == "*" || elem.NamespaceURI() == namespaceURI) &&
-				(localName == "*" || elem.LocalName() == localName) {
-				elements = append(elements, elem)
-			}
-		}
-		return true // Continue traversal
-	})
-	return elements
-}
-
 // ClassList returns the DOMTokenList for the class attribute
 func (e *Element) ClassList() *collection.DOMTokenList {
 	if e.classList == nil {
@@ -295,32 +280,24 @@ func (e *Element) HasClass(className string) bool {
 	return e.ClassList().Contains(className)
 }
 
-// GetElementsByTagName returns all descendant elements with the specified tag name
-func (e *Element) GetElementsByTagName(tagName string) []*Element {
-	var elements []*Element
-	Traverse(e, func(node Node) bool {
-		if elem, ok := node.(*Element); ok && node != e { // Don't include self
-			if elem.TagName() == tagName || tagName == "*" {
-				elements = append(elements, elem)
-			}
-		}
-		return true // Continue traversal
-	})
-	return elements
+// GetElementsByTagName returns a live HTMLCollection of all descendant elements with the specified tag name
+func (e *Element) GetElementsByTagName(tagName string) *HTMLCollection {
+	return NewElementsByTagNameCollection(e, tagName)
 }
 
-// GetElementsByClassName returns all descendant elements with the specified class name
-func (e *Element) GetElementsByClassName(className string) []*Element {
-	var elements []*Element
-	Traverse(e, func(node Node) bool {
-		if elem, ok := node.(*Element); ok && node != e { // Don't include self
-			if elem.HasClass(className) {
-				elements = append(elements, elem)
-			}
-		}
-		return true // Continue traversal
-	})
-	return elements
+// GetElementsByClassName returns a live HTMLCollection of all descendant elements with the specified class name
+func (e *Element) GetElementsByClassName(className string) *HTMLCollection {
+	return NewElementsByClassNameCollection(e, className)
+}
+
+// GetElementsByTagNameNS returns a live HTMLCollection of all descendant elements with the specified namespace URI and local name
+func (e *Element) GetElementsByTagNameNS(namespaceURI, localName string) *HTMLCollection {
+	return NewElementsByTagNameNSCollection(e, namespaceURI, localName)
+}
+
+// Children returns a live HTMLCollection of all child elements
+func (e *Element) Children() *HTMLCollection {
+	return NewChildElementsCollection(e)
 }
 
 // InnerHTML returns the HTML content of the element.

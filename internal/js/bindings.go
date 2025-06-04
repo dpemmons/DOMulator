@@ -96,8 +96,8 @@ func (db *DOMBindings) WrapDocument() *goja.Object {
 		}
 
 		tagName := call.Arguments[0].String()
-		elements := db.document.GetElementsByTagName(tagName)
-		return db.WrapNodeList(elements)
+		collection := db.document.GetElementsByTagName(tagName)
+		return db.WrapNodeList(collection.ToSlice())
 	})
 
 	doc.Set("getElementsByClassName", func(call goja.FunctionCall) goja.Value {
@@ -106,8 +106,8 @@ func (db *DOMBindings) WrapDocument() *goja.Object {
 		}
 
 		className := call.Arguments[0].String()
-		elements := db.document.GetElementsByClassName(className)
-		return db.WrapNodeList(elements)
+		collection := db.document.GetElementsByClassName(className)
+		return db.WrapNodeList(collection.ToSlice())
 	})
 
 	doc.Set("querySelector", func(call goja.FunctionCall) goja.Value {
@@ -288,8 +288,8 @@ func (db *DOMBindings) WrapElement(element *dom.Element) *goja.Object {
 		}
 
 		tagName := call.Arguments[0].String()
-		elements := element.GetElementsByTagName(tagName)
-		return db.WrapNodeList(elements)
+		collection := element.GetElementsByTagName(tagName)
+		return db.WrapNodeList(collection.ToSlice())
 	})
 
 	elem.Set("getElementsByClassName", func(call goja.FunctionCall) goja.Value {
@@ -298,8 +298,8 @@ func (db *DOMBindings) WrapElement(element *dom.Element) *goja.Object {
 		}
 
 		className := call.Arguments[0].String()
-		elements := element.GetElementsByClassName(className)
-		return db.WrapNodeList(elements)
+		collection := element.GetElementsByClassName(className)
+		return db.WrapNodeList(collection.ToSlice())
 	})
 
 	// Insert adjacent HTML method

@@ -48,6 +48,10 @@ type Node interface {
 	RemoveEventListener(eventType string, listener func(Event))
 	DispatchEvent(event Event) bool
 
+	// Mutation Observer methods
+	registerMutationObserver(observer *MutationObserver, options MutationObserverInit)
+	unregisterMutationObserver(observer *MutationObserver)
+
 	// Internal methods for DOM manipulation and JS binding
 	setParent(parent Node)
 	setOwnerDocument(doc *Document)
@@ -254,6 +258,12 @@ func (n *nodeImpl) AppendChild(child Node) Node {
 	n.childNodes = append(n.childNodes, child)
 	child.setParent(n.self)
 	child.setOwnerDocument(n.ownerDocument)
+
+	// Increment modification time
+	if n.ownerDocument != nil {
+		n.ownerDocument.incrementModificationTime()
+	}
+
 	return child
 }
 
@@ -265,6 +275,12 @@ func (n *nodeImpl) RemoveChild(child Node) Node {
 		if c == child {
 			n.childNodes = append(n.childNodes[:i], n.childNodes[i+1:]...)
 			child.setParent(nil)
+
+			// Increment modification time
+			if n.ownerDocument != nil {
+				n.ownerDocument.incrementModificationTime()
+			}
+
 			return child
 		}
 	}
@@ -323,6 +339,12 @@ func (n *nodeImpl) InsertBefore(newChild, refChild Node) Node {
 			n.childNodes = append(n.childNodes[:i], append(NodeList{newChild}, n.childNodes[i:]...)...)
 			newChild.setParent(n.self)
 			newChild.setOwnerDocument(n.ownerDocument)
+
+			// Increment modification time
+			if n.ownerDocument != nil {
+				n.ownerDocument.incrementModificationTime()
+			}
+
 			return newChild
 		}
 	}
@@ -383,6 +405,12 @@ func (n *nodeImpl) ReplaceChild(newChild, oldChild Node) Node {
 			newChild.setParent(n.self)
 			newChild.setOwnerDocument(n.ownerDocument)
 			oldChild.setParent(nil)
+
+			// Increment modification time
+			if n.ownerDocument != nil {
+				n.ownerDocument.incrementModificationTime()
+			}
+
 			return oldChild
 		}
 	}
@@ -412,6 +440,22 @@ func (n *nodeImpl) setOwnerDocument(doc *Document) {
 	n.ownerDocument = doc
 	for _, child := range n.childNodes {
 		child.setOwnerDocument(doc)
+	}
+}
+
+// registerMutationObserver registers a mutation observer for this node
+func (n *nodeImpl) registerMutationObserver(observer *MutationObserver, options MutationObserverInit) {
+	// Get the document's observer registry
+	if n.ownerDocument != nil {
+		n.ownerDocument.getObserverRegistry().RegisterObserver(n.self, observer, options)
+	}
+}
+
+// unregisterMutationObserver removes a mutation observer from this node
+func (n *nodeImpl) unregisterMutationObserver(observer *MutationObserver) {
+	// Get the document's observer registry
+	if n.ownerDocument != nil {
+		n.ownerDocument.getObserverRegistry().UnregisterObserver(n.self, observer)
 	}
 }
 

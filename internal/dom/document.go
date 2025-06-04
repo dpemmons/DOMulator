@@ -1,12 +1,17 @@
 package dom
 
 import (
+	"sync"
+
 	"github.com/dop251/goja"
 )
 
 // Document represents the entire HTML document.
 type Document struct {
 	nodeImpl
+	observerRegistry  *ObserverRegistry
+	modificationTime  int64 // Counter incremented on each DOM modification
+	modificationMutex sync.RWMutex
 	// Add document-specific properties here
 	// For example, a reference to the window object, if we implement one
 	// defaultView *Window
@@ -19,6 +24,7 @@ func NewDocument() *Document {
 			nodeType: DocumentNode,
 			nodeName: "#document",
 		},
+		observerRegistry: NewObserverRegistry(),
 	}
 	doc.ownerDocument = doc // A document is its own owner document
 	doc.nodeImpl.self = doc // Set the self reference
@@ -68,47 +74,24 @@ func (d *Document) GetElementById(id string) *Element {
 	return result
 }
 
-// GetElementsByTagName returns all elements with the specified tag name
-func (d *Document) GetElementsByTagName(tagName string) []*Element {
-	var elements []*Element
-	Traverse(d, func(node Node) bool {
-		if elem, ok := node.(*Element); ok {
-			if elem.TagName() == tagName || tagName == "*" {
-				elements = append(elements, elem)
-			}
-		}
-		return true // Continue traversal
-	})
-	return elements
+// GetElementsByTagName returns a live HTMLCollection of all elements with the specified tag name
+func (d *Document) GetElementsByTagName(tagName string) *HTMLCollection {
+	return NewElementsByTagNameCollection(d, tagName)
 }
 
-// GetElementsByTagNameNS returns all elements with the specified namespace URI and local name
-func (d *Document) GetElementsByTagNameNS(namespaceURI, localName string) []*Element {
-	var elements []*Element
-	Traverse(d, func(node Node) bool {
-		if elem, ok := node.(*Element); ok {
-			if (namespaceURI == "*" || elem.NamespaceURI() == namespaceURI) &&
-				(localName == "*" || elem.LocalName() == localName) {
-				elements = append(elements, elem)
-			}
-		}
-		return true // Continue traversal
-	})
-	return elements
+// GetElementsByTagNameNS returns a live HTMLCollection of all elements with the specified namespace URI and local name
+func (d *Document) GetElementsByTagNameNS(namespaceURI, localName string) *HTMLCollection {
+	return NewElementsByTagNameNSCollection(d, namespaceURI, localName)
 }
 
-// GetElementsByClassName returns all elements with the specified class name
-func (d *Document) GetElementsByClassName(className string) []*Element {
-	var elements []*Element
-	Traverse(d, func(node Node) bool {
-		if elem, ok := node.(*Element); ok {
-			if elem.HasClass(className) {
-				elements = append(elements, elem)
-			}
-		}
-		return true // Continue traversal
-	})
-	return elements
+// GetElementsByClassName returns a live HTMLCollection of all elements with the specified class name
+func (d *Document) GetElementsByClassName(className string) *HTMLCollection {
+	return NewElementsByClassNameCollection(d, className)
+}
+
+// GetElementsByName returns a live HTMLCollection of all elements with the specified name attribute
+func (d *Document) GetElementsByName(name string) *HTMLCollection {
+	return NewElementsByNameCollection(d, name)
 }
 
 // DocumentElement returns the document element (usually <html>)
@@ -143,6 +126,25 @@ func (d *Document) Head() *Element {
 		}
 	}
 	return nil
+}
+
+// getObserverRegistry returns the document's observer registry
+func (d *Document) getObserverRegistry() *ObserverRegistry {
+	return d.observerRegistry
+}
+
+// getModificationTime returns the current modification time
+func (d *Document) getModificationTime() int64 {
+	d.modificationMutex.RLock()
+	defer d.modificationMutex.RUnlock()
+	return d.modificationTime
+}
+
+// incrementModificationTime increments the modification counter
+func (d *Document) incrementModificationTime() {
+	d.modificationMutex.Lock()
+	defer d.modificationMutex.Unlock()
+	d.modificationTime++
 }
 
 // toJS is a placeholder for JavaScript binding.

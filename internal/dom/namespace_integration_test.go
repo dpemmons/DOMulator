@@ -179,32 +179,32 @@ func TestElementGetElementsByTagNameNS(t *testing.T) {
 
 	// Test finding HTML div elements
 	divs := root.GetElementsByTagNameNS("http://www.w3.org/1999/xhtml", "div")
-	if len(divs) != 2 {
-		t.Errorf("Expected 2 div elements, got %d", len(divs))
+	if divs.Length() != 2 {
+		t.Errorf("Expected 2 div elements, got %d", divs.Length())
 	}
 
 	// Test finding SVG elements
 	rects := root.GetElementsByTagNameNS("http://www.w3.org/2000/svg", "rect")
-	if len(rects) != 1 {
-		t.Errorf("Expected 1 rect element, got %d", len(rects))
+	if rects.Length() != 1 {
+		t.Errorf("Expected 1 rect element, got %d", rects.Length())
 	}
 
 	// Test wildcard namespace
 	allDivs := root.GetElementsByTagNameNS("*", "div")
-	if len(allDivs) != 2 {
-		t.Errorf("Expected 2 div elements with wildcard namespace, got %d", len(allDivs))
+	if allDivs.Length() != 2 {
+		t.Errorf("Expected 2 div elements with wildcard namespace, got %d", allDivs.Length())
 	}
 
 	// Test wildcard local name
 	allElements := root.GetElementsByTagNameNS("*", "*")
-	if len(allElements) != 3 {
-		t.Errorf("Expected 3 elements with wildcard namespace and local name, got %d", len(allElements))
+	if allElements.Length() != 3 {
+		t.Errorf("Expected 3 elements with wildcard namespace and local name, got %d", allElements.Length())
 	}
 
 	// Test no matches
 	spans := root.GetElementsByTagNameNS("http://www.w3.org/1999/xhtml", "span")
-	if len(spans) != 0 {
-		t.Errorf("Expected 0 span elements, got %d", len(spans))
+	if spans.Length() != 0 {
+		t.Errorf("Expected 0 span elements, got %d", spans.Length())
 	}
 }
 
@@ -224,20 +224,20 @@ func TestDocumentGetElementsByTagNameNS(t *testing.T) {
 
 	// Test finding HTML div elements
 	divs := doc.GetElementsByTagNameNS("http://www.w3.org/1999/xhtml", "div")
-	if len(divs) != 2 {
-		t.Errorf("Expected 2 div elements, got %d", len(divs))
+	if divs.Length() != 2 {
+		t.Errorf("Expected 2 div elements, got %d", divs.Length())
 	}
 
 	// Test finding SVG elements
 	rects := doc.GetElementsByTagNameNS("http://www.w3.org/2000/svg", "rect")
-	if len(rects) != 1 {
-		t.Errorf("Expected 1 rect element, got %d", len(rects))
+	if rects.Length() != 1 {
+		t.Errorf("Expected 1 rect element, got %d", rects.Length())
 	}
 
 	// Test finding HTML root element
 	htmls := doc.GetElementsByTagNameNS("http://www.w3.org/1999/xhtml", "html")
-	if len(htmls) != 1 {
-		t.Errorf("Expected 1 html element, got %d", len(htmls))
+	if htmls.Length() != 1 {
+		t.Errorf("Expected 1 html element, got %d", htmls.Length())
 	}
 }
 
@@ -312,24 +312,24 @@ func TestMixedNamespaceDocument(t *testing.T) {
 
 	// Test searching across namespaces
 	svgElements := doc.GetElementsByTagNameNS("http://www.w3.org/2000/svg", "*")
-	if len(svgElements) != 3 { // svg, rect, circle
-		t.Errorf("Expected 3 SVG elements, got %d", len(svgElements))
+	if svgElements.Length() != 3 { // svg, rect, circle
+		t.Errorf("Expected 3 SVG elements, got %d", svgElements.Length())
 	}
 
 	htmlElements := doc.GetElementsByTagNameNS("http://www.w3.org/1999/xhtml", "*")
-	if len(htmlElements) != 3 { // html, body, div
-		t.Errorf("Expected 3 HTML elements, got %d", len(htmlElements))
+	if htmlElements.Length() != 3 { // html, body, div
+		t.Errorf("Expected 3 HTML elements, got %d", htmlElements.Length())
 	}
 
 	// Test finding specific elements
 	rects := doc.GetElementsByTagNameNS("http://www.w3.org/2000/svg", "rect")
-	if len(rects) != 1 {
-		t.Errorf("Expected 1 rect element, got %d", len(rects))
+	if rects.Length() != 1 {
+		t.Errorf("Expected 1 rect element, got %d", rects.Length())
 	}
 
 	// Test from element level
 	svgElementsFromBody := body.GetElementsByTagNameNS("http://www.w3.org/2000/svg", "*")
-	if len(svgElementsFromBody) != 3 {
-		t.Errorf("Expected 3 SVG elements from body search, got %d", len(svgElementsFromBody))
+	if svgElementsFromBody.Length() != 3 {
+		t.Errorf("Expected 3 SVG elements from body search, got %d", svgElementsFromBody.Length())
 	}
 }

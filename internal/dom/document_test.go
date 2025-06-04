@@ -247,44 +247,44 @@ func TestDocumentGetElementsByTagName(t *testing.T) {
 
 	// Test finding divs
 	divs := doc.GetElementsByTagName("div")
-	if len(divs) != 2 {
-		t.Errorf("Expected 2 div elements, got %d", len(divs))
+	if divs.Length() != 2 {
+		t.Errorf("Expected 2 div elements, got %d", divs.Length())
 	}
-	if divs[0] != div1 || divs[1] != div2 {
+	if divs.Item(0) != div1 || divs.Item(1) != div2 {
 		t.Errorf("Unexpected div elements order")
 	}
 
 	// Test finding spans
 	spans := doc.GetElementsByTagName("span")
-	if len(spans) != 2 {
-		t.Errorf("Expected 2 span elements, got %d", len(spans))
+	if spans.Length() != 2 {
+		t.Errorf("Expected 2 span elements, got %d", spans.Length())
 	}
 	// Depth-first traversal order: span2 (child of div2) comes first in traversal, then span1 (direct child of div1)
-	if spans[0] != span2 || spans[1] != span1 {
+	if spans.Item(0) != span2 || spans.Item(1) != span1 {
 		t.Errorf("Unexpected span elements order. Got: [%p, %p], Expected: [%p, %p]",
-			spans[0], spans[1], span2, span1)
+			spans.Item(0), spans.Item(1), span2, span1)
 	}
 
 	// Test finding single element
 	paragraphs := doc.GetElementsByTagName("p")
-	if len(paragraphs) != 1 {
-		t.Errorf("Expected 1 p element, got %d", len(paragraphs))
+	if paragraphs.Length() != 1 {
+		t.Errorf("Expected 1 p element, got %d", paragraphs.Length())
 	}
-	if paragraphs[0] != p {
+	if paragraphs.Item(0) != p {
 		t.Errorf("Expected to find p element")
 	}
 
 	// Test finding non-existent elements
 	links := doc.GetElementsByTagName("a")
-	if len(links) != 0 {
-		t.Errorf("Expected 0 a elements, got %d", len(links))
+	if links.Length() != 0 {
+		t.Errorf("Expected 0 a elements, got %d", links.Length())
 	}
 
 	// Test wildcard selector
 	all := doc.GetElementsByTagName("*")
 	expectedCount := 7 // html, body, div1, div2, span1, span2, p
-	if len(all) != expectedCount {
-		t.Errorf("Expected %d elements with wildcard, got %d", expectedCount, len(all))
+	if all.Length() != expectedCount {
+		t.Errorf("Expected %d elements with wildcard, got %d", expectedCount, all.Length())
 	}
 }
 
@@ -313,31 +313,31 @@ func TestDocumentGetElementsByClassName(t *testing.T) {
 
 	// Test finding by single class
 	mainElements := doc.GetElementsByClassName("main")
-	if len(mainElements) != 2 {
-		t.Errorf("Expected 2 elements with 'main' class, got %d", len(mainElements))
+	if mainElements.Length() != 2 {
+		t.Errorf("Expected 2 elements with 'main' class, got %d", mainElements.Length())
 	}
-	if mainElements[0] != div1 || mainElements[1] != span1 {
+	if mainElements.Item(0) != div1 || mainElements.Item(1) != span1 {
 		t.Errorf("Unexpected elements with 'main' class")
 	}
 
 	contentElements := doc.GetElementsByClassName("content")
-	if len(contentElements) != 1 {
-		t.Errorf("Expected 1 element with 'content' class, got %d", len(contentElements))
+	if contentElements.Length() != 1 {
+		t.Errorf("Expected 1 element with 'content' class, got %d", contentElements.Length())
 	}
-	if contentElements[0] != div2 {
+	if contentElements.Item(0) != div2 {
 		t.Errorf("Expected to find div2 with 'content' class")
 	}
 
 	// Test finding non-existent class
 	nonExistent := doc.GetElementsByClassName("nonexistent")
-	if len(nonExistent) != 0 {
-		t.Errorf("Expected 0 elements with nonexistent class, got %d", len(nonExistent))
+	if nonExistent.Length() != 0 {
+		t.Errorf("Expected 0 elements with nonexistent class, got %d", nonExistent.Length())
 	}
 
 	// Test with empty class name
 	emptyClass := doc.GetElementsByClassName("")
-	if len(emptyClass) != 0 {
-		t.Errorf("Expected 0 elements with empty class name, got %d", len(emptyClass))
+	if emptyClass.Length() != 0 {
+		t.Errorf("Expected 0 elements with empty class name, got %d", emptyClass.Length())
 	}
 }
 
@@ -466,8 +466,8 @@ func TestDocumentComplexTraversal(t *testing.T) {
 
 	// Test complex queries
 	primaryElements := doc.GetElementsByClassName("primary")
-	if len(primaryElements) != 3 {
-		t.Errorf("Expected 3 elements with 'primary' class, got %d", len(primaryElements))
+	if primaryElements.Length() != 3 {
+		t.Errorf("Expected 3 elements with 'primary' class, got %d", primaryElements.Length())
 	}
 
 	headerById := doc.GetElementById("main-header")
@@ -486,8 +486,8 @@ func TestDocumentComplexTraversal(t *testing.T) {
 	main.AppendChild(section)
 
 	primaryElementsAfter := doc.GetElementsByClassName("primary")
-	if len(primaryElementsAfter) != 4 {
-		t.Errorf("Expected 4 elements with 'primary' class after addition, got %d", len(primaryElementsAfter))
+	if primaryElementsAfter.Length() != 4 {
+		t.Errorf("Expected 4 elements with 'primary' class after addition, got %d", primaryElementsAfter.Length())
 	}
 }
 

@@ -147,31 +147,31 @@ func TestElementGetElementsByTagName(t *testing.T) {
 
 	// Test finding specific tag
 	spans := root.GetElementsByTagName("span")
-	if len(spans) != 3 {
-		t.Errorf("Expected 3 span elements, got %d", len(spans))
+	if spans.Length() != 3 {
+		t.Errorf("Expected 3 span elements, got %d", spans.Length())
 	}
 	// Depth-first traversal order: child1, grandchild (under child2), child3
-	if spans[0] != child1 || spans[1] != grandchild || spans[2] != child3 {
+	if spans.Item(0) != child1 || spans.Item(1) != grandchild || spans.Item(2) != child3 {
 		t.Errorf("Unexpected span elements returned. Got: [%p, %p, %p], Expected: [%p, %p, %p]",
-			spans[0], spans[1], spans[2], child1, grandchild, child3)
+			spans.Item(0), spans.Item(1), spans.Item(2), child1, grandchild, child3)
 	}
 
 	// Test finding non-existent tag
 	divs := root.GetElementsByTagName("div")
-	if len(divs) != 0 {
-		t.Errorf("Expected 0 div elements (excluding self), got %d", len(divs))
+	if divs.Length() != 0 {
+		t.Errorf("Expected 0 div elements (excluding self), got %d", divs.Length())
 	}
 
 	// Test wildcard selector
 	all := root.GetElementsByTagName("*")
-	if len(all) != 4 {
-		t.Errorf("Expected 4 elements with wildcard, got %d", len(all))
+	if all.Length() != 4 {
+		t.Errorf("Expected 4 elements with wildcard, got %d", all.Length())
 	}
 
 	// Test on element with no children
 	child2spans := child1.GetElementsByTagName("span")
-	if len(child2spans) != 0 {
-		t.Errorf("Expected 0 span elements in child1, got %d", len(child2spans))
+	if child2spans.Length() != 0 {
+		t.Errorf("Expected 0 span elements in child1, got %d", child2spans.Length())
 	}
 }
 
@@ -195,31 +195,31 @@ func TestElementGetElementsByClassName(t *testing.T) {
 
 	// Test finding elements by class
 	testElements := root.GetElementsByClassName("test")
-	if len(testElements) != 3 {
-		t.Errorf("Expected 3 elements with class 'test', got %d", len(testElements))
+	if testElements.Length() != 3 {
+		t.Errorf("Expected 3 elements with class 'test', got %d", testElements.Length())
 	}
-	if testElements[0] != child1 || testElements[1] != child2 || testElements[2] != grandchild {
+	if testElements.Item(0) != child1 || testElements.Item(1) != child2 || testElements.Item(2) != grandchild {
 		t.Errorf("Unexpected elements with class 'test' returned")
 	}
 
 	otherElements := root.GetElementsByClassName("other")
-	if len(otherElements) != 2 {
-		t.Errorf("Expected 2 elements with class 'other', got %d", len(otherElements))
+	if otherElements.Length() != 2 {
+		t.Errorf("Expected 2 elements with class 'other', got %d", otherElements.Length())
 	}
-	if otherElements[0] != child2 || otherElements[1] != child3 {
+	if otherElements.Item(0) != child2 || otherElements.Item(1) != child3 {
 		t.Errorf("Unexpected elements with class 'other' returned")
 	}
 
 	// Test finding non-existent class
 	nonExistent := root.GetElementsByClassName("nonexistent")
-	if len(nonExistent) != 0 {
-		t.Errorf("Expected 0 elements with non-existent class, got %d", len(nonExistent))
+	if nonExistent.Length() != 0 {
+		t.Errorf("Expected 0 elements with non-existent class, got %d", nonExistent.Length())
 	}
 
 	// Test on element with no children
 	emptyResult := child1.GetElementsByClassName("test")
-	if len(emptyResult) != 0 {
-		t.Errorf("Expected 0 elements in child1, got %d", len(emptyResult))
+	if emptyResult.Length() != 0 {
+		t.Errorf("Expected 0 elements in child1, got %d", emptyResult.Length())
 	}
 }
 
