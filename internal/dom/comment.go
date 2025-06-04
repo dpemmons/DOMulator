@@ -121,3 +121,49 @@ func (c *Comment) Remove() error {
 	parent.RemoveChild(c)
 	return nil
 }
+
+// NonDocumentTypeChildNode mixin methods
+
+// PreviousElementSibling returns the first preceding sibling that is an element; otherwise null.
+func (c *Comment) PreviousElementSibling() *Element {
+	parent := c.ParentNode()
+	if parent == nil {
+		return nil
+	}
+
+	siblings := parent.ChildNodes()
+	for i := len(siblings) - 1; i >= 0; i-- {
+		if siblings[i] == c {
+			// Found this comment node, now look backwards for an element sibling
+			for j := i - 1; j >= 0; j-- {
+				if siblings[j].NodeType() == ElementNode {
+					return siblings[j].(*Element)
+				}
+			}
+			break
+		}
+	}
+	return nil
+}
+
+// NextElementSibling returns the first following sibling that is an element; otherwise null.
+func (c *Comment) NextElementSibling() *Element {
+	parent := c.ParentNode()
+	if parent == nil {
+		return nil
+	}
+
+	siblings := parent.ChildNodes()
+	for i, sibling := range siblings {
+		if sibling == c {
+			// Found this comment node, now look forwards for an element sibling
+			for j := i + 1; j < len(siblings); j++ {
+				if siblings[j].NodeType() == ElementNode {
+					return siblings[j].(*Element)
+				}
+			}
+			break
+		}
+	}
+	return nil
+}

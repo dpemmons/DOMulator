@@ -280,3 +280,49 @@ func (t *Text) Remove() error {
 	parent.RemoveChild(t)
 	return nil
 }
+
+// NonDocumentTypeChildNode mixin methods
+
+// PreviousElementSibling returns the first preceding sibling that is an element; otherwise null.
+func (t *Text) PreviousElementSibling() *Element {
+	parent := t.ParentNode()
+	if parent == nil {
+		return nil
+	}
+
+	siblings := parent.ChildNodes()
+	for i := len(siblings) - 1; i >= 0; i-- {
+		if siblings[i] == t {
+			// Found this text node, now look backwards for an element sibling
+			for j := i - 1; j >= 0; j-- {
+				if siblings[j].NodeType() == ElementNode {
+					return siblings[j].(*Element)
+				}
+			}
+			break
+		}
+	}
+	return nil
+}
+
+// NextElementSibling returns the first following sibling that is an element; otherwise null.
+func (t *Text) NextElementSibling() *Element {
+	parent := t.ParentNode()
+	if parent == nil {
+		return nil
+	}
+
+	siblings := parent.ChildNodes()
+	for i, sibling := range siblings {
+		if sibling == t {
+			// Found this text node, now look forwards for an element sibling
+			for j := i + 1; j < len(siblings); j++ {
+				if siblings[j].NodeType() == ElementNode {
+					return siblings[j].(*Element)
+				}
+			}
+			break
+		}
+	}
+	return nil
+}
