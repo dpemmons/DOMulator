@@ -1,6 +1,8 @@
 package dom
 
 import (
+	"strings"
+
 	"github.com/dop251/goja"
 )
 
@@ -394,12 +396,22 @@ func (n *nodeImpl) InsertBefore(newChild, refChild Node) Node {
 			return nil
 		}
 
+		// If already at the correct position, do nothing
+		if currentIndex == targetIndex || currentIndex == targetIndex-1 {
+			return newChild
+		}
+
 		// Remove from current position first
 		n.childNodes = append(n.childNodes[:currentIndex], n.childNodes[currentIndex+1:]...)
 
-		// Insert at the original target index without adjustment
-		// This matches DOM behavior where position is calculated relative to original state
-		n.childNodes = append(n.childNodes[:targetIndex], append(NodeList{newChild}, n.childNodes[targetIndex:]...)...)
+		// Adjust target index if necessary (when moving from earlier position to later position)
+		adjustedTargetIndex := targetIndex
+		if currentIndex < targetIndex {
+			adjustedTargetIndex = targetIndex - 1
+		}
+
+		// Insert at the adjusted target index
+		n.childNodes = append(n.childNodes[:adjustedTargetIndex], append(NodeList{newChild}, n.childNodes[adjustedTargetIndex:]...)...)
 		return newChild
 	}
 
@@ -846,5 +858,79 @@ func canInsertNode(node, parent Node) bool {
 	}
 
 	// Additional type-based validation can be added here
+	return true
+}
+
+// matchSimpleSelector checks if an element matches a basic CSS selector
+// This is a shared helper function for simple selector matching across DOM nodes
+func matchSimpleSelector(elem *Element, selector string) bool {
+	selector = strings.TrimSpace(selector)
+	if selector == "" {
+		return false
+	}
+
+	// Handle wildcard selector
+	if selector == "*" {
+		return true
+	}
+
+	// Parse simple selectors: tag, #id, .class, tag#id, tag.class, etc.
+	remaining := selector
+	var tagName, id string
+	var classes []string
+
+	// Extract ID (e.g., #myid)
+	if idx := strings.Index(remaining, "#"); idx != -1 {
+		idPart := remaining[idx+1:]
+		if spaceIdx := strings.IndexAny(idPart, ". "); spaceIdx != -1 {
+			id = idPart[:spaceIdx]
+			remaining = remaining[:idx] + idPart[spaceIdx:]
+		} else {
+			id = idPart
+			remaining = remaining[:idx]
+		}
+	}
+
+	// Extract Classes (e.g., .myclass)
+	classParts := strings.Split(remaining, ".")
+	if len(classParts) > 1 {
+		for _, class := range classParts[1:] {
+			if class != "" {
+				classes = append(classes, class)
+			}
+		}
+		remaining = classParts[0]
+	}
+
+	// Extract Tag (the remaining part)
+	tagName = strings.TrimSpace(remaining)
+
+	// Check tag match
+	if tagName != "" && !strings.EqualFold(tagName, elem.TagName()) {
+		return false
+	}
+
+	// Check ID match
+	if id != "" && elem.GetAttribute("id") != id {
+		return false
+	}
+
+	// Check class matches
+	if len(classes) > 0 {
+		elemClasses := strings.Fields(elem.GetAttribute("class"))
+		for _, requiredClass := range classes {
+			found := false
+			for _, elemClass := range elemClasses {
+				if requiredClass == elemClass {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		}
+	}
+
 	return true
 }

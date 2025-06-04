@@ -392,13 +392,28 @@ func TestNodeInsertBefore(t *testing.T) {
 		t.Errorf("Expected parent to have 4 children, got %d", len(parent.ChildNodes()))
 	}
 
-	// Insert an already parented child
-	parent.InsertBefore(child1, child2) // child1 is already a child of parent
-	if parent.ChildNodes()[2] != child1 {
-		t.Errorf("Expected child1 to be at index 2, got %v", parent.ChildNodes()[2])
+	// Insert an already parented child (child1 is already immediately before child2, so this should be a no-op)
+	parent.InsertBefore(child1, child2) // child1 is already a child of parent and already before child2
+
+	// Since child1 is already immediately before child2, no change should occur
+	if parent.ChildNodes()[1] != child1 {
+		t.Errorf("Expected child1 to remain at index 1, got %v at index 1", parent.ChildNodes()[1])
+	}
+	if parent.ChildNodes()[2] != child2 {
+		t.Errorf("Expected child2 to remain at index 2, got %v at index 2", parent.ChildNodes()[2])
 	}
 	if len(parent.ChildNodes()) != 4 { // Should not change count
 		t.Errorf("Expected parent to still have 4 children, got %d", len(parent.ChildNodes()))
+	}
+
+	// Test inserting a node that's not immediately before the reference
+	// Insert child2 before anotherNewChild (should move child2 from index 2 to index 3)
+	parent.InsertBefore(child2, anotherNewChild)
+	if parent.ChildNodes()[2] != child2 {
+		t.Errorf("Expected child2 to be at index 2 after moving, got %v", parent.ChildNodes()[2])
+	}
+	if parent.ChildNodes()[3] != anotherNewChild {
+		t.Errorf("Expected anotherNewChild to be at index 3, got %v", parent.ChildNodes()[3])
 	}
 }
 

@@ -300,6 +300,182 @@ func (e *Element) Children() *HTMLCollection {
 	return NewChildElementsCollection(e)
 }
 
+// FirstElementChild returns the first child that is an element; otherwise null
+func (e *Element) FirstElementChild() *Element {
+	for _, child := range e.childNodes {
+		if child.NodeType() == ElementNode {
+			return child.(*Element)
+		}
+	}
+	return nil
+}
+
+// LastElementChild returns the last child that is an element; otherwise null
+func (e *Element) LastElementChild() *Element {
+	for i := len(e.childNodes) - 1; i >= 0; i-- {
+		if e.childNodes[i].NodeType() == ElementNode {
+			return e.childNodes[i].(*Element)
+		}
+	}
+	return nil
+}
+
+// ChildElementCount returns the number of children of this that are elements
+func (e *Element) ChildElementCount() int {
+	count := 0
+	for _, child := range e.childNodes {
+		if child.NodeType() == ElementNode {
+			count++
+		}
+	}
+	return count
+}
+
+// Prepend inserts nodes before the first child of this element
+func (e *Element) Prepend(nodes ...interface{}) error {
+	// Convert nodes into a single node or document fragment
+	convertedNode, err := convertNodesToNode(nodes, e.ownerDocument)
+	if err != nil {
+		return err
+	}
+
+	if convertedNode == nil {
+		return nil // Nothing to insert
+	}
+
+	// Pre-insert node before the first child
+	if e.FirstChild() != nil {
+		e.InsertBefore(convertedNode, e.FirstChild())
+	} else {
+		e.AppendChild(convertedNode)
+	}
+
+	return nil
+}
+
+// Append inserts nodes after the last child of this element
+func (e *Element) Append(nodes ...interface{}) error {
+	// Convert nodes into a single node or document fragment
+	convertedNode, err := convertNodesToNode(nodes, e.ownerDocument)
+	if err != nil {
+		return err
+	}
+
+	if convertedNode == nil {
+		return nil // Nothing to insert
+	}
+
+	// Append node to this element
+	e.AppendChild(convertedNode)
+	return nil
+}
+
+// ReplaceChildren replaces all children of this element with the given nodes
+func (e *Element) ReplaceChildren(nodes ...interface{}) error {
+	// Convert nodes into a single node or document fragment
+	convertedNode, err := convertNodesToNode(nodes, e.ownerDocument)
+	if err != nil {
+		return err
+	}
+
+	// Ensure pre-insert validity (even though we're not inserting before a specific child)
+	if convertedNode != nil {
+		if err := e.validateHierarchy(convertedNode); err != nil {
+			return err
+		}
+	}
+
+	// Remove all existing children
+	for len(e.childNodes) > 0 {
+		e.RemoveChild(e.childNodes[0])
+	}
+
+	// Add the new node if any
+	if convertedNode != nil {
+		e.AppendChild(convertedNode)
+	}
+
+	return nil
+}
+
+// MoveBefore moves node into this element before child, preserving state
+func (e *Element) MoveBefore(node Node, child Node) error {
+	if node == nil {
+		return NewNotFoundError("node cannot be null")
+	}
+
+	// Determine reference child
+	referenceChild := child
+	if referenceChild == node {
+		// If reference is the node being moved, use its next sibling
+		referenceChild = node.NextSibling()
+	}
+
+	// Validate hierarchy constraints
+	if err := e.validateHierarchy(node); err != nil {
+		return err
+	}
+
+	// Move the node (this preserves state by not removing first)
+	// Note: InsertBefore handles moving nodes within the same parent correctly
+	if referenceChild != nil {
+		e.InsertBefore(node, referenceChild)
+	} else {
+		e.AppendChild(node)
+	}
+
+	return nil
+}
+
+// QuerySelector returns the first element that is a descendant of this element that matches selectors
+func (e *Element) QuerySelector(selectors string) *Element {
+	// Simple implementation for now - supports basic selectors
+	// TODO: Integrate with full CSS selector engine to avoid circular dependency
+	return e.querySelectorRecursive(selectors, false)
+}
+
+// querySelectorRecursive performs depth-first search for elements matching the selector
+func (e *Element) querySelectorRecursive(selectors string, includeRoot bool) *Element {
+	// Check if this element matches (only if we should include the root)
+	if includeRoot && matchSimpleSelector(e, selectors) {
+		return e
+	}
+
+	// Search through all direct children in order
+	for _, child := range e.ChildNodes() {
+		if elem, ok := child.(*Element); ok {
+			// Check if this child element matches
+			if matchSimpleSelector(elem, selectors) {
+				return elem
+			}
+			// Recursively search in this element's descendants
+			if found := elem.querySelectorRecursive(selectors, true); found != nil {
+				return found
+			}
+		}
+	}
+	return nil
+}
+
+// QuerySelectorAll returns all element descendants of this element that match selectors
+func (e *Element) QuerySelectorAll(selectors string) NodeList {
+	// Simple implementation for now - supports basic selectors
+	// TODO: Integrate with full CSS selector engine to avoid circular dependency
+	var matchingNodes NodeList
+	Traverse(e, func(n Node) bool {
+		if n == e {
+			return true // Skip the root element itself
+		}
+		if elem, ok := n.(*Element); ok {
+			if matchSimpleSelector(elem, selectors) {
+				matchingNodes = append(matchingNodes, elem)
+			}
+		}
+		return true // Continue traversal
+	})
+	return matchingNodes
+}
+
 // findElementByIdRecursive performs a depth-first search for an element with the given ID.
 // It properly stops traversal when the first match is found.
 func (e *Element) findElementByIdRecursive(id string) *Element {
@@ -702,7 +878,7 @@ func (e *Element) ReplaceWith(nodes ...interface{}) error {
 	}
 
 	if convertedNode == nil {
-		// Just remove this element
+		// Just remove this element if no replacement nodes
 		parent.RemoveChild(e)
 		return nil
 	}
@@ -712,7 +888,7 @@ func (e *Element) ReplaceWith(nodes ...interface{}) error {
 	return nil
 }
 
-// Remove removes this element from its parent.
+// Remove removes this element from its parent's children list.
 func (e *Element) Remove() error {
 	parent := e.ParentNode()
 	if parent == nil {
