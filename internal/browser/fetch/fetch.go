@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
+	"github.com/dpemmons/DOMulator/internal/browser/abort"
 	"github.com/dpemmons/DOMulator/internal/browser/cookies"
 	"github.com/dpemmons/DOMulator/testing"
 )
@@ -60,6 +61,7 @@ func (f *FetchAPI) CreateFetchFunction(vm *goja.Runtime) func(goja.FunctionCall)
 			options = &RequestOptions{
 				Method:  "GET",
 				Headers: make(map[string]string),
+				Signal:  nil,
 			}
 		}
 
@@ -67,9 +69,24 @@ func (f *FetchAPI) CreateFetchFunction(vm *goja.Runtime) func(goja.FunctionCall)
 		promise, resolve, reject := vm.NewPromise()
 
 		go func() {
+			// Check if signal is already aborted before starting
+			if options.Signal != nil && options.Signal.Aborted() {
+				reason := options.Signal.Reason()
+				if reason == nil {
+					reason = "AbortError"
+				}
+				reject(vm.NewGoError(&abort.AbortError{}))
+				return
+			}
+
 			response, err := f.fetch(requestURL, options)
 			if err != nil {
-				reject(vm.NewGoError(err))
+				// Check if this is an abort error
+				if abort.IsAbortError(err) {
+					reject(vm.NewGoError(err))
+				} else {
+					reject(vm.NewGoError(err))
+				}
 				return
 			}
 
@@ -86,6 +103,7 @@ type RequestOptions struct {
 	Method  string
 	Headers map[string]string
 	Body    string
+	Signal  *abort.AbortSignal
 }
 
 // parseRequestOptions parses JavaScript request options into Go struct
@@ -93,6 +111,7 @@ func (f *FetchAPI) parseRequestOptions(vm *goja.Runtime, value goja.Value) *Requ
 	options := &RequestOptions{
 		Method:  "GET",
 		Headers: make(map[string]string),
+		Signal:  nil,
 	}
 
 	if value == nil || goja.IsNull(value) || goja.IsUndefined(value) {
@@ -127,11 +146,35 @@ func (f *FetchAPI) parseRequestOptions(vm *goja.Runtime, value goja.Value) *Requ
 		options.Body = bodyVal.String()
 	}
 
+	// Parse signal
+	if signalVal := obj.Get("signal"); !goja.IsUndefined(signalVal) && !goja.IsNull(signalVal) {
+		signalObj := signalVal.ToObject(vm)
+		if signalObj != nil {
+			options.Signal = abort.GetAbortSignalFromJS(signalObj)
+		}
+	}
+
 	return options
 }
 
 // fetch performs the actual HTTP request
 func (f *FetchAPI) fetch(requestURL string, options *RequestOptions) (*Response, error) {
+	// Create context with abort signal support
+	ctx := context.Background()
+	if options.Signal != nil {
+		integration := abort.NewFetchIntegration(options.Signal)
+
+		// Check if already aborted
+		if err := integration.CheckAborted(); err != nil {
+			return nil, err
+		}
+
+		// Create cancellable context
+		var cancel context.CancelFunc
+		ctx, cancel = integration.CreateContext(ctx)
+		defer cancel()
+	}
+
 	// Check for mock first
 	if f.networkMocks != nil {
 		if mockResponse := f.networkMocks.Match(options.Method, requestURL); mockResponse != nil {
@@ -163,13 +206,13 @@ func (f *FetchAPI) fetch(requestURL string, options *RequestOptions) (*Response,
 		return nil, fmt.Errorf("failed to parse URL: %w", err)
 	}
 
-	// Create HTTP request
+	// Create HTTP request with context
 	var body io.Reader
 	if options.Body != "" {
 		body = strings.NewReader(options.Body)
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), options.Method, requestURL, body)
+	req, err := http.NewRequestWithContext(ctx, options.Method, requestURL, body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -190,6 +233,14 @@ func (f *FetchAPI) fetch(requestURL string, options *RequestOptions) (*Response,
 	// Perform request
 	resp, err := f.client.Do(req)
 	if err != nil {
+		// Wrap context cancellation as abort error
+		if options.Signal != nil {
+			integration := abort.NewFetchIntegration(options.Signal)
+			if abortErr := integration.CheckAborted(); abortErr != nil {
+				return nil, abortErr
+			}
+			return nil, abort.WrapAbortableError(err, options.Signal.Reason())
+		}
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
@@ -208,6 +259,13 @@ func (f *FetchAPI) fetch(requestURL string, options *RequestOptions) (*Response,
 	// Read response body
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
+		// Check for abort during body reading
+		if options.Signal != nil {
+			integration := abort.NewFetchIntegration(options.Signal)
+			if abortErr := integration.CheckAborted(); abortErr != nil {
+				return nil, abortErr
+			}
+		}
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 

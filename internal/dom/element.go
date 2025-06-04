@@ -11,7 +11,12 @@ import (
 type Element struct {
 	nodeImpl
 
-	tagName    string
+	// Namespace support
+	namespaceURI string
+	prefix       string
+	localName    string
+	tagName      string // Computed from prefix and localName
+
 	attributes map[string]string // Map to store attributes
 	// classList      *ClassList    // To be implemented
 	// dataset        *Dataset      // To be implemented
@@ -37,19 +42,49 @@ type Element struct {
 	// mutationRecord *MutationRecord // To be implemented
 }
 
-// NewElement creates a new Element node.
+// NewElement creates a new Element node without namespace.
 func NewElement(tagName string, doc *Document) *Element {
+	// Parse qualified name for legacy compatibility
+	info := ParseQualifiedName(tagName)
+
 	elem := &Element{
 		nodeImpl: nodeImpl{
 			nodeType:      ElementNode,
 			nodeName:      tagName, // NodeName for Element is its tagName
 			ownerDocument: doc,
 		},
-		tagName:    tagName,
-		attributes: make(map[string]string), // Initialize the attributes map
+		namespaceURI: info.NamespaceURI,
+		prefix:       info.Prefix,
+		localName:    info.LocalName,
+		tagName:      tagName,
+		attributes:   make(map[string]string), // Initialize the attributes map
 	}
 	elem.nodeImpl.self = elem // Set the self reference
 	return elem
+}
+
+// NewElementNS creates a new Element node with namespace support.
+func NewElementNS(namespaceURI, qualifiedName string, doc *Document) (*Element, error) {
+	// Validate and extract namespace information
+	ns, prefix, localName, err := ValidateAndExtract(namespaceURI, qualifiedName)
+	if err != nil {
+		return nil, err
+	}
+
+	elem := &Element{
+		nodeImpl: nodeImpl{
+			nodeType:      ElementNode,
+			nodeName:      qualifiedName, // NodeName for Element is its qualified name
+			ownerDocument: doc,
+		},
+		namespaceURI: ns,
+		prefix:       prefix,
+		localName:    localName,
+		tagName:      qualifiedName,
+		attributes:   make(map[string]string), // Initialize the attributes map
+	}
+	elem.nodeImpl.self = elem // Set the self reference
+	return elem, nil
 }
 
 // AppendChild overrides the nodeImpl version to handle cache invalidation
@@ -100,6 +135,21 @@ func (e *Element) TagName() string {
 	return e.tagName
 }
 
+// NamespaceURI returns the namespace URI of the element.
+func (e *Element) NamespaceURI() string {
+	return e.namespaceURI
+}
+
+// Prefix returns the namespace prefix of the element.
+func (e *Element) Prefix() string {
+	return e.prefix
+}
+
+// LocalName returns the local name of the element.
+func (e *Element) LocalName() string {
+	return e.localName
+}
+
 // SetAttribute sets the value of an attribute on the specified element.
 // If the attribute already exists, its value is updated; otherwise, a new attribute is added.
 func (e *Element) SetAttribute(name, value string) {
@@ -121,6 +171,114 @@ func (e *Element) HasAttribute(name string) bool {
 // RemoveAttribute removes the named attribute from the element
 func (e *Element) RemoveAttribute(name string) {
 	delete(e.attributes, name)
+}
+
+// GetAttributeNS returns the value of the attribute with the specified namespace and local name.
+func (e *Element) GetAttributeNS(namespaceURI, localName string) string {
+	// For now, use a simple implementation that searches for the attribute
+	// TODO: Implement proper namespace-aware attribute storage
+	for name, value := range e.attributes {
+		if strings.Contains(name, ":") {
+			parts := strings.SplitN(name, ":", 2)
+			if len(parts) == 2 {
+				prefix := parts[0]
+				attrLocalName := parts[1]
+				if attrLocalName == localName {
+					// Check if prefix matches the namespace
+					expectedNS := GetWellKnownNamespace(prefix)
+					if expectedNS == namespaceURI {
+						return value
+					}
+				}
+			}
+		} else if namespaceURI == "" && name == localName {
+			// No namespace case
+			return value
+		}
+	}
+	return ""
+}
+
+// SetAttributeNS sets the value of the attribute with the specified namespace and qualified name.
+func (e *Element) SetAttributeNS(namespaceURI, qualifiedName, value string) error {
+	// Validate the qualified name and namespace combination
+	_, _, _, err := ValidateAndExtract(namespaceURI, qualifiedName)
+	if err != nil {
+		return err
+	}
+
+	// For now, store with the qualified name
+	// TODO: Implement proper namespace-aware attribute storage
+	e.attributes[qualifiedName] = value
+	return nil
+}
+
+// HasAttributeNS returns true if the element has an attribute with the specified namespace and local name.
+func (e *Element) HasAttributeNS(namespaceURI, localName string) bool {
+	// For now, use a simple implementation that searches for the attribute
+	// TODO: Implement proper namespace-aware attribute storage
+	for name := range e.attributes {
+		if strings.Contains(name, ":") {
+			parts := strings.SplitN(name, ":", 2)
+			if len(parts) == 2 {
+				prefix := parts[0]
+				attrLocalName := parts[1]
+				if attrLocalName == localName {
+					// Check if prefix matches the namespace
+					expectedNS := GetWellKnownNamespace(prefix)
+					if expectedNS == namespaceURI {
+						return true
+					}
+				}
+			}
+		} else if namespaceURI == "" && name == localName {
+			// No namespace case
+			return true
+		}
+	}
+	return false
+}
+
+// RemoveAttributeNS removes the attribute with the specified namespace and local name.
+func (e *Element) RemoveAttributeNS(namespaceURI, localName string) {
+	// For now, use a simple implementation that searches for the attribute
+	// TODO: Implement proper namespace-aware attribute storage
+	for name := range e.attributes {
+		if strings.Contains(name, ":") {
+			parts := strings.SplitN(name, ":", 2)
+			if len(parts) == 2 {
+				prefix := parts[0]
+				attrLocalName := parts[1]
+				if attrLocalName == localName {
+					// Check if prefix matches the namespace
+					expectedNS := GetWellKnownNamespace(prefix)
+					if expectedNS == namespaceURI {
+						delete(e.attributes, name)
+						return
+					}
+				}
+			}
+		} else if namespaceURI == "" && name == localName {
+			// No namespace case
+			delete(e.attributes, name)
+			return
+		}
+	}
+}
+
+// GetElementsByTagNameNS returns all descendant elements with the specified namespace URI and local name.
+func (e *Element) GetElementsByTagNameNS(namespaceURI, localName string) []*Element {
+	var elements []*Element
+	Traverse(e, func(node Node) bool {
+		if elem, ok := node.(*Element); ok && node != e { // Don't include self
+			if (namespaceURI == "*" || elem.NamespaceURI() == namespaceURI) &&
+				(localName == "*" || elem.LocalName() == localName) {
+				elements = append(elements, elem)
+			}
+		}
+		return true // Continue traversal
+	})
+	return elements
 }
 
 // HasClass returns true if the element has the specified class

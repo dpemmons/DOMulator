@@ -30,6 +30,11 @@ func (d *Document) CreateElement(tagName string) *Element {
 	return NewElement(tagName, d)
 }
 
+// CreateElementNS creates a new element with the given namespace URI and qualified name
+func (d *Document) CreateElementNS(namespaceURI, qualifiedName string) (*Element, error) {
+	return NewElementNS(namespaceURI, qualifiedName, d)
+}
+
 // CreateTextNode creates a new text node with the given data
 func (d *Document) CreateTextNode(data string) *Text {
 	return NewText(data, d)
@@ -69,6 +74,21 @@ func (d *Document) GetElementsByTagName(tagName string) []*Element {
 	Traverse(d, func(node Node) bool {
 		if elem, ok := node.(*Element); ok {
 			if elem.TagName() == tagName || tagName == "*" {
+				elements = append(elements, elem)
+			}
+		}
+		return true // Continue traversal
+	})
+	return elements
+}
+
+// GetElementsByTagNameNS returns all elements with the specified namespace URI and local name
+func (d *Document) GetElementsByTagNameNS(namespaceURI, localName string) []*Element {
+	var elements []*Element
+	Traverse(d, func(node Node) bool {
+		if elem, ok := node.(*Element); ok {
+			if (namespaceURI == "*" || elem.NamespaceURI() == namespaceURI) &&
+				(localName == "*" || elem.LocalName() == localName) {
 				elements = append(elements, elem)
 			}
 		}
