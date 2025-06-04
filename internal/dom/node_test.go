@@ -253,24 +253,24 @@ func TestValidDocumentStructure(t *testing.T) {
 
 	// Verify structure
 	children := doc.ChildNodes()
-	if len(children) != 5 {
-		t.Errorf("Expected Document to have 5 children, got %d", len(children))
+	if children.Length() != 5 {
+		t.Errorf("Expected Document to have 5 children, got %d", children.Length())
 	}
 
-	if children[0].NodeType() != CommentNode {
-		t.Errorf("Expected first child to be Comment, got %v", children[0].NodeType())
+	if children.Item(0).NodeType() != CommentNode {
+		t.Errorf("Expected first child to be Comment, got %v", children.Item(0).NodeType())
 	}
-	if children[1].NodeType() != DocumentTypeNode {
-		t.Errorf("Expected second child to be DocumentType, got %v", children[1].NodeType())
+	if children.Item(1).NodeType() != DocumentTypeNode {
+		t.Errorf("Expected second child to be DocumentType, got %v", children.Item(1).NodeType())
 	}
-	if children[2].NodeType() != CommentNode {
-		t.Errorf("Expected third child to be Comment, got %v", children[2].NodeType())
+	if children.Item(2).NodeType() != CommentNode {
+		t.Errorf("Expected third child to be Comment, got %v", children.Item(2).NodeType())
 	}
-	if children[3].NodeType() != ElementNode {
-		t.Errorf("Expected fourth child to be Element, got %v", children[3].NodeType())
+	if children.Item(3).NodeType() != ElementNode {
+		t.Errorf("Expected fourth child to be Element, got %v", children.Item(3).NodeType())
 	}
-	if children[4].NodeType() != CommentNode {
-		t.Errorf("Expected fifth child to be Comment, got %v", children[4].NodeType())
+	if children.Item(4).NodeType() != CommentNode {
+		t.Errorf("Expected fifth child to be Comment, got %v", children.Item(4).NodeType())
 	}
 }
 
@@ -287,8 +287,8 @@ func TestNodeAppendChild(t *testing.T) {
 	if child1.ParentNode() != parent {
 		t.Errorf("Expected child1's parent to be parent, got %v", child1.ParentNode())
 	}
-	if len(parent.ChildNodes()) != 1 {
-		t.Errorf("Expected parent to have 1 child, got %d", len(parent.ChildNodes()))
+	if parent.ChildNodes().Length() != 1 {
+		t.Errorf("Expected parent to have 1 child, got %d", parent.ChildNodes().Length())
 	}
 
 	parent.AppendChild(child2)
@@ -298,8 +298,8 @@ func TestNodeAppendChild(t *testing.T) {
 	if child2.ParentNode() != parent {
 		t.Errorf("Expected child2's parent to be parent, got %v", child2.ParentNode())
 	}
-	if len(parent.ChildNodes()) != 2 {
-		t.Errorf("Expected parent to have 2 children, got %d", len(parent.ChildNodes()))
+	if parent.ChildNodes().Length() != 2 {
+		t.Errorf("Expected parent to have 2 children, got %d", parent.ChildNodes().Length())
 	}
 
 	// Test appending an already parented child
@@ -315,8 +315,8 @@ func TestNodeAppendChild(t *testing.T) {
 	if child1.ParentNode() != newParent {
 		t.Errorf("Expected child1's parent to be newParent, got %v", child1.ParentNode())
 	}
-	if len(parent.ChildNodes()) != 1 {
-		t.Errorf("Expected parent to have 1 child after child1 moved, got %d", len(parent.ChildNodes()))
+	if parent.ChildNodes().Length() != 1 {
+		t.Errorf("Expected parent to have 1 child after child1 moved, got %d", parent.ChildNodes().Length())
 	}
 	if parent.FirstChild() != child2 {
 		t.Errorf("Expected parent's first child to be child2, got %v", parent.FirstChild())
@@ -339,8 +339,8 @@ func TestNodeRemoveChild(t *testing.T) {
 	if child1.ParentNode() != nil {
 		t.Errorf("Expected child1's parent to be nil, got %v", child1.ParentNode())
 	}
-	if len(parent.ChildNodes()) != 1 {
-		t.Errorf("Expected parent to have 1 child, got %d", len(parent.ChildNodes()))
+	if parent.ChildNodes().Length() != 1 {
+		t.Errorf("Expected parent to have 1 child, got %d", parent.ChildNodes().Length())
 	}
 	if parent.FirstChild() != child2 {
 		t.Errorf("Expected parent's first child to be child2, got %v", parent.FirstChild())
@@ -375,11 +375,12 @@ func TestNodeInsertBefore(t *testing.T) {
 	if newChild.ParentNode() != parent {
 		t.Errorf("Expected newChild's parent to be parent, got %v", newChild.ParentNode())
 	}
-	if parent.ChildNodes()[0] != newChild {
-		t.Errorf("Expected newChild to be at index 0, got %v", parent.ChildNodes()[0])
+	children := parent.ChildNodes()
+	if children.Item(0) != newChild {
+		t.Errorf("Expected newChild to be at index 0, got %v", children.Item(0))
 	}
-	if len(parent.ChildNodes()) != 3 {
-		t.Errorf("Expected parent to have 3 children, got %d", len(parent.ChildNodes()))
+	if children.Length() != 3 {
+		t.Errorf("Expected parent to have 3 children, got %d", children.Length())
 	}
 
 	// Insert at end (refChild is nil)
@@ -388,32 +389,35 @@ func TestNodeInsertBefore(t *testing.T) {
 	if parent.LastChild() != anotherNewChild {
 		t.Errorf("Expected anotherNewChild to be last child, got %v", parent.LastChild())
 	}
-	if len(parent.ChildNodes()) != 4 {
-		t.Errorf("Expected parent to have 4 children, got %d", len(parent.ChildNodes()))
+	children = parent.ChildNodes()
+	if children.Length() != 4 {
+		t.Errorf("Expected parent to have 4 children, got %d", children.Length())
 	}
 
 	// Insert an already parented child (child1 is already immediately before child2, so this should be a no-op)
 	parent.InsertBefore(child1, child2) // child1 is already a child of parent and already before child2
 
 	// Since child1 is already immediately before child2, no change should occur
-	if parent.ChildNodes()[1] != child1 {
-		t.Errorf("Expected child1 to remain at index 1, got %v at index 1", parent.ChildNodes()[1])
+	children = parent.ChildNodes()
+	if children.Item(1) != child1 {
+		t.Errorf("Expected child1 to remain at index 1, got %v at index 1", children.Item(1))
 	}
-	if parent.ChildNodes()[2] != child2 {
-		t.Errorf("Expected child2 to remain at index 2, got %v at index 2", parent.ChildNodes()[2])
+	if children.Item(2) != child2 {
+		t.Errorf("Expected child2 to remain at index 2, got %v at index 2", children.Item(2))
 	}
-	if len(parent.ChildNodes()) != 4 { // Should not change count
-		t.Errorf("Expected parent to still have 4 children, got %d", len(parent.ChildNodes()))
+	if children.Length() != 4 { // Should not change count
+		t.Errorf("Expected parent to still have 4 children, got %d", children.Length())
 	}
 
 	// Test inserting a node that's not immediately before the reference
 	// Insert child2 before anotherNewChild (should move child2 from index 2 to index 3)
 	parent.InsertBefore(child2, anotherNewChild)
-	if parent.ChildNodes()[2] != child2 {
-		t.Errorf("Expected child2 to be at index 2 after moving, got %v", parent.ChildNodes()[2])
+	children = parent.ChildNodes()
+	if children.Item(2) != child2 {
+		t.Errorf("Expected child2 to be at index 2 after moving, got %v", children.Item(2))
 	}
-	if parent.ChildNodes()[3] != anotherNewChild {
-		t.Errorf("Expected anotherNewChild to be at index 3, got %v", parent.ChildNodes()[3])
+	if children.Item(3) != anotherNewChild {
+		t.Errorf("Expected anotherNewChild to be at index 3, got %v", children.Item(3))
 	}
 }
 
@@ -437,20 +441,22 @@ func TestNodeReplaceChild(t *testing.T) {
 	if newChild.ParentNode() != parent {
 		t.Errorf("Expected newChild's parent to be parent, got %v", newChild.ParentNode())
 	}
-	if parent.ChildNodes()[0] != newChild {
-		t.Errorf("Expected newChild to be at index 0, got %v", parent.ChildNodes()[0])
+	children := parent.ChildNodes()
+	if children.Item(0) != newChild {
+		t.Errorf("Expected newChild to be at index 0, got %v", children.Item(0))
 	}
-	if len(parent.ChildNodes()) != 2 {
-		t.Errorf("Expected parent to have 2 children, got %d", len(parent.ChildNodes()))
+	if children.Length() != 2 {
+		t.Errorf("Expected parent to have 2 children, got %d", children.Length())
 	}
 
 	// Replace with an already parented child
 	parent.ReplaceChild(child2, newChild) // child2 is already a child of parent
-	if parent.ChildNodes()[0] != child2 {
-		t.Errorf("Expected child2 to be at index 0, got %v", parent.ChildNodes()[0])
+	children = parent.ChildNodes()
+	if children.Item(0) != child2 {
+		t.Errorf("Expected child2 to be at index 0, got %v", children.Item(0))
 	}
-	if len(parent.ChildNodes()) != 2 { // Should not change count
-		t.Errorf("Expected parent to still have 2 children, got %d", len(parent.ChildNodes()))
+	if children.Length() != 2 { // Should not change count
+		t.Errorf("Expected parent to still have 2 children, got %d", children.Length())
 	}
 }
 
@@ -471,8 +477,8 @@ func TestNodeCloneNode(t *testing.T) {
 	if shallowClone.NodeName() != parent.NodeName() {
 		t.Errorf("Expected shallow clone node name %s, got %s", parent.NodeName(), shallowClone.NodeName())
 	}
-	if len(shallowClone.ChildNodes()) != 0 {
-		t.Errorf("Expected shallow clone to have 0 children, got %d", len(shallowClone.ChildNodes()))
+	if shallowClone.ChildNodes().Length() != 0 {
+		t.Errorf("Expected shallow clone to have 0 children, got %d", shallowClone.ChildNodes().Length())
 	}
 
 	// Deep clone
@@ -483,15 +489,15 @@ func TestNodeCloneNode(t *testing.T) {
 	if deepClone.NodeName() != parent.NodeName() {
 		t.Errorf("Expected deep clone node name %s, got %s", parent.NodeName(), deepClone.NodeName())
 	}
-	if len(deepClone.ChildNodes()) != 1 {
-		t.Errorf("Expected deep clone to have 1 child, got %d", len(deepClone.ChildNodes()))
+	if deepClone.ChildNodes().Length() != 1 {
+		t.Errorf("Expected deep clone to have 1 child, got %d", deepClone.ChildNodes().Length())
 	}
 	clonedChild := deepClone.FirstChild()
 	if clonedChild.NodeName() != child1.NodeName() {
 		t.Errorf("Expected cloned child name %s, got %s", child1.NodeName(), clonedChild.NodeName())
 	}
-	if len(clonedChild.ChildNodes()) != 1 {
-		t.Errorf("Expected cloned child to have 1 child, got %d", len(clonedChild.ChildNodes()))
+	if clonedChild.ChildNodes().Length() != 1 {
+		t.Errorf("Expected cloned child to have 1 child, got %d", clonedChild.ChildNodes().Length())
 	}
 	clonedText := clonedChild.FirstChild()
 	if clonedText.NodeValue() != textNode.NodeValue() {
@@ -554,10 +560,10 @@ func TestNodeTraversal(t *testing.T) {
 
 	// Test ChildNodes
 	childNodes := root.ChildNodes()
-	if len(childNodes) != 3 {
-		t.Errorf("Expected root to have 3 children, got %d", len(childNodes))
+	if childNodes.Length() != 3 {
+		t.Errorf("Expected root to have 3 children, got %d", childNodes.Length())
 	}
-	if childNodes[0] != child1 || childNodes[1] != child2 || childNodes[2] != child3 {
+	if childNodes.Item(0) != child1 || childNodes.Item(1) != child2 || childNodes.Item(2) != child3 {
 		t.Errorf("ChildNodes mismatch")
 	}
 }

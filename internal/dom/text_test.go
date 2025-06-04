@@ -23,8 +23,8 @@ func TestTextCreation(t *testing.T) {
 	if text.ParentNode() != nil {
 		t.Errorf("Expected parent node to be nil")
 	}
-	if len(text.ChildNodes()) != 0 {
-		t.Errorf("Expected no child nodes, got %d", len(text.ChildNodes()))
+	if text.ChildNodes().Length() != 0 {
+		t.Errorf("Expected text node to have 0 children, got %d", text.ChildNodes().Length())
 	}
 }
 

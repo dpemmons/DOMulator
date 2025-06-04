@@ -19,8 +19,8 @@ func TestDocumentCreation(t *testing.T) {
 	if doc.ParentNode() != nil {
 		t.Errorf("Expected parent node to be nil")
 	}
-	if len(doc.ChildNodes()) != 0 {
-		t.Errorf("Expected no child nodes, got %d", len(doc.ChildNodes()))
+	if doc.ChildNodes().Length() != 0 {
+		t.Errorf("Expected no child nodes, got %d", doc.ChildNodes().Length())
 	}
 }
 
@@ -139,7 +139,7 @@ func TestDocumentCreateDocumentFragment(t *testing.T) {
 	if frag1.ParentNode() != nil {
 		t.Errorf("Expected new fragment to have no parent")
 	}
-	if len(frag1.ChildNodes()) != 0 {
+	if frag1.ChildNodes().Length() != 0 {
 		t.Errorf("Expected new fragment to have no children")
 	}
 
@@ -154,8 +154,8 @@ func TestDocumentCreateDocumentFragment(t *testing.T) {
 	frag1.AppendChild(elem)
 	frag1.AppendChild(text)
 
-	if len(frag1.ChildNodes()) != 2 {
-		t.Errorf("Expected fragment to have 2 children, got %d", len(frag1.ChildNodes()))
+	if frag1.ChildNodes().Length() != 2 {
+		t.Errorf("Expected fragment to have 2 children, got %d", frag1.ChildNodes().Length())
 	}
 	if frag1.FirstChild() != elem {
 		t.Errorf("Expected first child to be element")

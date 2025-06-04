@@ -74,7 +74,10 @@ func (c *CDATASection) After(nodes ...interface{}) error {
 	// Find the next viable sibling (not in the nodes being inserted)
 	var excludeNodes []Node
 	if fragment, ok := convertedNode.(*DocumentFragment); ok {
-		excludeNodes = fragment.ChildNodes()
+		fragmentChildren := fragment.ChildNodes()
+		for i := 0; i < fragmentChildren.Length(); i++ {
+			excludeNodes = append(excludeNodes, fragmentChildren.Item(i))
+		}
 	} else {
 		excludeNodes = []Node{convertedNode}
 	}
@@ -133,12 +136,13 @@ func (c *CDATASection) PreviousElementSibling() *Element {
 	}
 
 	siblings := parent.ChildNodes()
-	for i := len(siblings) - 1; i >= 0; i-- {
-		if siblings[i] == c {
+	for i := siblings.Length() - 1; i >= 0; i-- {
+		if siblings.Item(i) == c {
 			// Found this CDATA section node, now look backwards for an element sibling
 			for j := i - 1; j >= 0; j-- {
-				if siblings[j].NodeType() == ElementNode {
-					return siblings[j].(*Element)
+				sibling := siblings.Item(j)
+				if sibling.NodeType() == ElementNode {
+					return sibling.(*Element)
 				}
 			}
 			break
@@ -155,12 +159,14 @@ func (c *CDATASection) NextElementSibling() *Element {
 	}
 
 	siblings := parent.ChildNodes()
-	for i, sibling := range siblings {
+	for i := 0; i < siblings.Length(); i++ {
+		sibling := siblings.Item(i)
 		if sibling == c {
 			// Found this CDATA section node, now look forwards for an element sibling
-			for j := i + 1; j < len(siblings); j++ {
-				if siblings[j].NodeType() == ElementNode {
-					return siblings[j].(*Element)
+			for j := i + 1; j < siblings.Length(); j++ {
+				nextSibling := siblings.Item(j)
+				if nextSibling.NodeType() == ElementNode {
+					return nextSibling.(*Element)
 				}
 			}
 			break

@@ -32,7 +32,7 @@ type Node interface {
 	OwnerDocument() *Document
 
 	ParentNode() Node
-	ChildNodes() NodeList
+	ChildNodes() *NodeList
 	FirstChild() Node
 	LastChild() Node
 	PreviousSibling() Node
@@ -64,16 +64,13 @@ type Node interface {
 	toJS(vm *goja.Runtime) goja.Value
 }
 
-// NodeList represents a collection of nodes.
-type NodeList []Node
-
 // nodeImpl provides a common base for all Node types.
 type nodeImpl struct {
 	nodeType       NodeType
 	nodeName       string
 	nodeValue      string
 	parentNode     Node
-	childNodes     NodeList
+	childNodes     []Node // Internal storage as slice
 	ownerDocument  *Document
 	self           Node // Reference to the containing Node
 	eventListeners map[string][]func(Event)
@@ -203,8 +200,10 @@ func (n *nodeImpl) ParentNode() Node {
 	return n.parentNode
 }
 
-func (n *nodeImpl) ChildNodes() NodeList {
-	return n.childNodes
+func (n *nodeImpl) ChildNodes() *NodeList {
+	return NewLiveNodeList(n.self, func() []Node {
+		return n.childNodes
+	})
 }
 
 func (n *nodeImpl) FirstChild() Node {
@@ -226,10 +225,12 @@ func (n *nodeImpl) PreviousSibling() Node {
 		return nil
 	}
 	// Iterate through the parent's children to find n.self and its previous sibling
-	for i, child := range n.parentNode.ChildNodes() {
+	siblings := n.parentNode.ChildNodes()
+	for i := 0; i < siblings.Length(); i++ {
+		child := siblings.Item(i)
 		if child == n.self {
 			if i > 0 {
-				return n.parentNode.ChildNodes()[i-1]
+				return siblings.Item(i - 1)
 			}
 			return nil
 		}
@@ -242,10 +243,12 @@ func (n *nodeImpl) NextSibling() Node {
 		return nil
 	}
 	// Iterate through the parent's children to find n.self and its next sibling
-	for i, child := range n.parentNode.ChildNodes() {
+	siblings := n.parentNode.ChildNodes()
+	for i := 0; i < siblings.Length(); i++ {
+		child := siblings.Item(i)
 		if child == n.self {
-			if i < len(n.parentNode.ChildNodes())-1 {
-				return n.parentNode.ChildNodes()[i+1]
+			if i < siblings.Length()-1 {
+				return siblings.Item(i + 1)
 			}
 			return nil
 		}
@@ -266,12 +269,29 @@ func (n *nodeImpl) AppendChild(child Node) Node {
 	// Handle DocumentFragment insertion
 	if child.NodeType() == DocumentFragmentNode {
 		fragment := child
-		// Move all children from the fragment to this node
-		for len(fragment.ChildNodes()) > 0 {
-			fragmentChild := fragment.ChildNodes()[0]
-			fragment.RemoveChild(fragmentChild)
-			n.AppendChild(fragmentChild)
+		// Collect all fragment children first (since removing them modifies the live NodeList)
+		fragmentChildren := fragment.ChildNodes()
+		var childrenToMove []Node
+		for i := 0; i < fragmentChildren.Length(); i++ {
+			childrenToMove = append(childrenToMove, fragmentChildren.Item(i))
 		}
+
+		// Move all children from the fragment to this node
+		for _, fragmentChild := range childrenToMove {
+			// Remove from fragment first
+			fragment.RemoveChild(fragmentChild)
+
+			// Add directly to this node without calling AppendChild (to avoid recursion)
+			n.childNodes = append(n.childNodes, fragmentChild)
+			fragmentChild.setParent(n.self)
+			fragmentChild.setOwnerDocument(n.ownerDocument)
+		}
+
+		// Increment modification time
+		if n.ownerDocument != nil {
+			n.ownerDocument.incrementModificationTime()
+		}
+
 		return fragment
 	}
 
@@ -354,11 +374,17 @@ func (n *nodeImpl) InsertBefore(newChild, refChild Node) Node {
 			return nil // refChild not found
 		}
 
+		// Collect all fragment children first (since removing them modifies the live NodeList)
+		fragmentChildren := fragment.ChildNodes()
+		var childrenToInsert []Node
+		for i := 0; i < fragmentChildren.Length(); i++ {
+			childrenToInsert = append(childrenToInsert, fragmentChildren.Item(i))
+		}
+
 		// Insert all children from the fragment before refChild
-		for len(fragment.ChildNodes()) > 0 {
-			fragmentChild := fragment.ChildNodes()[0]
+		for _, fragmentChild := range childrenToInsert {
 			fragment.RemoveChild(fragmentChild)
-			n.childNodes = append(n.childNodes[:refIndex], append(NodeList{fragmentChild}, n.childNodes[refIndex:]...)...)
+			n.childNodes = append(n.childNodes[:refIndex], append([]Node{fragmentChild}, n.childNodes[refIndex:]...)...)
 			fragmentChild.setParent(n.self)
 			fragmentChild.setOwnerDocument(n.ownerDocument)
 			refIndex++ // Increment position for next insertion
@@ -411,7 +437,7 @@ func (n *nodeImpl) InsertBefore(newChild, refChild Node) Node {
 		}
 
 		// Insert at the adjusted target index
-		n.childNodes = append(n.childNodes[:adjustedTargetIndex], append(NodeList{newChild}, n.childNodes[adjustedTargetIndex:]...)...)
+		n.childNodes = append(n.childNodes[:adjustedTargetIndex], append([]Node{newChild}, n.childNodes[adjustedTargetIndex:]...)...)
 		return newChild
 	}
 
@@ -422,7 +448,7 @@ func (n *nodeImpl) InsertBefore(newChild, refChild Node) Node {
 
 	for i, c := range n.childNodes {
 		if c == refChild {
-			n.childNodes = append(n.childNodes[:i], append(NodeList{newChild}, n.childNodes[i:]...)...)
+			n.childNodes = append(n.childNodes[:i], append([]Node{newChild}, n.childNodes[i:]...)...)
 			newChild.setParent(n.self)
 			newChild.setOwnerDocument(n.ownerDocument)
 
@@ -478,10 +504,11 @@ func (n *nodeImpl) ReplaceChild(newChild, oldChild Node) Node {
 
 		// Insert all children from the fragment at the old position
 		insertIndex := oldIndex
-		for len(fragment.ChildNodes()) > 0 {
-			fragmentChild := fragment.ChildNodes()[0]
+		fragmentChildren := fragment.ChildNodes()
+		for fragmentChildren.Length() > 0 {
+			fragmentChild := fragmentChildren.Item(0)
 			fragment.RemoveChild(fragmentChild)
-			n.childNodes = append(n.childNodes[:insertIndex], append(NodeList{fragmentChild}, n.childNodes[insertIndex:]...)...)
+			n.childNodes = append(n.childNodes[:insertIndex], append([]Node{fragmentChild}, n.childNodes[insertIndex:]...)...)
 			fragmentChild.setParent(n.self)
 			fragmentChild.setOwnerDocument(n.ownerDocument)
 			insertIndex++ // Increment position for next insertion
@@ -709,7 +736,9 @@ func Traverse(n Node, visit func(Node) bool) {
 		return
 	}
 
-	for _, child := range n.ChildNodes() {
+	children := n.ChildNodes()
+	for i := 0; i < children.Length(); i++ {
+		child := children.Item(i)
 		Traverse(child, visit)
 	}
 }
@@ -774,12 +803,14 @@ func findViablePreviousSibling(node Node, excludeNodes []Node) Node {
 
 	// Find the node's position and search backwards for a viable sibling
 	siblings := node.ParentNode().ChildNodes()
-	for i, sibling := range siblings {
+	for i := 0; i < siblings.Length(); i++ {
+		sibling := siblings.Item(i)
 		if sibling == node {
 			// Search backwards from this position
 			for j := i - 1; j >= 0; j-- {
-				if !excluded[siblings[j]] {
-					return siblings[j]
+				prevSibling := siblings.Item(j)
+				if !excluded[prevSibling] {
+					return prevSibling
 				}
 			}
 			break
@@ -804,12 +835,14 @@ func findViableNextSibling(node Node, excludeNodes []Node) Node {
 
 	// Find the node's position and search forwards for a viable sibling
 	siblings := node.ParentNode().ChildNodes()
-	for i, sibling := range siblings {
+	for i := 0; i < siblings.Length(); i++ {
+		sibling := siblings.Item(i)
 		if sibling == node {
 			// Search forwards from this position
-			for j := i + 1; j < len(siblings); j++ {
-				if !excluded[siblings[j]] {
-					return siblings[j]
+			for j := i + 1; j < siblings.Length(); j++ {
+				nextSibling := siblings.Item(j)
+				if !excluded[nextSibling] {
+					return nextSibling
 				}
 			}
 			break

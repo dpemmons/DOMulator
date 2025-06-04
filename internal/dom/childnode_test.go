@@ -24,13 +24,13 @@ func TestElement_ChildNodeMethods(t *testing.T) {
 		}
 
 		children := parent.ChildNodes()
-		if len(children) != 4 {
-			t.Errorf("Expected 4 children, got %d", len(children))
+		if children.Length() != 4 {
+			t.Errorf("Expected 4 children, got %d", children.Length())
 		}
-		if children[2] != newElem {
+		if children.Item(2) != newElem {
 			t.Errorf("Expected newElem at index 2")
 		}
-		if children[3] != elem2 {
+		if children.Item(3) != elem2 {
 			t.Errorf("Expected elem2 at index 3")
 		}
 	})
@@ -44,44 +44,46 @@ func TestElement_ChildNodeMethods(t *testing.T) {
 		}
 
 		children := parent.ChildNodes()
-		if len(children) != 6 {
-			t.Errorf("Expected 6 children, got %d", len(children))
+		if children.Length() != 6 {
+			t.Errorf("Expected 6 children, got %d", children.Length())
 		}
 		// text1 should be at index 1, new nodes at 2 and 3
-		if children[1] != text1 {
+		if children.Item(1) != text1 {
 			t.Errorf("Expected text1 at index 1")
 		}
-		if children[2] != newText {
+		if children.Item(2) != newText {
 			t.Errorf("Expected newText at index 2")
 		}
-		if children[3] != newElem {
+		if children.Item(3) != newElem {
 			t.Errorf("Expected newElem at index 3")
 		}
 	})
 
 	t.Run("ReplaceWith with string", func(t *testing.T) {
-		oldChildCount := len(parent.ChildNodes())
+		children := parent.ChildNodes()
+		oldChildCount := children.Length()
 		err := elem1.ReplaceWith("replacement text")
 		if err != nil {
 			t.Errorf("ReplaceWith() error = %v", err)
 		}
 
-		children := parent.ChildNodes()
-		if len(children) != oldChildCount {
+		children = parent.ChildNodes()
+		if children.Length() != oldChildCount {
 			t.Errorf("Expected same number of children after replace")
 		}
 		// First child should now be a text node
-		if children[0].NodeType() != TextNode {
+		if children.Item(0).NodeType() != TextNode {
 			t.Errorf("Expected first child to be text node")
 		}
-		if children[0].NodeValue() != "replacement text" {
-			t.Errorf("Expected replacement text, got %s", children[0].NodeValue())
+		if children.Item(0).NodeValue() != "replacement text" {
+			t.Errorf("Expected replacement text, got %s", children.Item(0).NodeValue())
 		}
 	})
 
 	t.Run("Remove", func(t *testing.T) {
-		childrenBefore := len(parent.ChildNodes())
-		targetNode := parent.ChildNodes()[2] // Get a node to remove
+		children := parent.ChildNodes()
+		childrenBefore := children.Length()
+		targetNode := children.Item(2) // Get a node to remove
 
 		if elem, ok := targetNode.(*Element); ok {
 			err := elem.Remove()
@@ -95,7 +97,8 @@ func TestElement_ChildNodeMethods(t *testing.T) {
 			}
 		}
 
-		childrenAfter := len(parent.ChildNodes())
+		children = parent.ChildNodes()
+		childrenAfter := children.Length()
 		if childrenAfter != childrenBefore-1 {
 			t.Errorf("Expected one less child after remove, got %d -> %d", childrenBefore, childrenAfter)
 		}
@@ -121,17 +124,17 @@ func TestText_ChildNodeMethods(t *testing.T) {
 		}
 
 		children := parent.ChildNodes()
-		if len(children) != 5 {
-			t.Errorf("Expected 5 children, got %d", len(children))
+		if children.Length() != 5 {
+			t.Errorf("Expected 5 children, got %d", children.Length())
 		}
 		// Should have: text1, "prefix", newElem, text2, text3
-		if children[1].NodeValue() != "prefix" {
-			t.Errorf("Expected 'prefix' at index 1, got %s", children[1].NodeValue())
+		if children.Item(1).NodeValue() != "prefix" {
+			t.Errorf("Expected 'prefix' at index 1, got %s", children.Item(1).NodeValue())
 		}
-		if children[2] != newElem {
+		if children.Item(2) != newElem {
 			t.Errorf("Expected newElem at index 2")
 		}
-		if children[3] != text2 {
+		if children.Item(3) != text2 {
 			t.Errorf("Expected text2 at index 3")
 		}
 	})
@@ -146,13 +149,15 @@ func TestText_ChildNodeMethods(t *testing.T) {
 	})
 
 	t.Run("ReplaceWith empty nodes", func(t *testing.T) {
-		childrenBefore := len(parent.ChildNodes())
+		children := parent.ChildNodes()
+		childrenBefore := children.Length()
 		err := text3.ReplaceWith()
 		if err != nil {
 			t.Errorf("ReplaceWith() error = %v", err)
 		}
 
-		childrenAfter := len(parent.ChildNodes())
+		children = parent.ChildNodes()
+		childrenAfter := children.Length()
 		if childrenAfter != childrenBefore-1 {
 			t.Errorf("Expected one less child after empty replace, got %d -> %d", childrenBefore, childrenAfter)
 		}
@@ -178,10 +183,10 @@ func TestComment_ChildNodeMethods(t *testing.T) {
 		}
 
 		children := parent.ChildNodes()
-		if len(children) != 4 {
-			t.Errorf("Expected 4 children, got %d", len(children))
+		if children.Length() != 4 {
+			t.Errorf("Expected 4 children, got %d", children.Length())
 		}
-		if children[2] != newComment {
+		if children.Item(2) != newComment {
 			t.Errorf("Expected newComment at index 2")
 		}
 	})
@@ -194,22 +199,24 @@ func TestComment_ChildNodeMethods(t *testing.T) {
 		}
 
 		children := parent.ChildNodes()
-		if len(children) != 5 {
-			t.Errorf("Expected 5 children, got %d", len(children))
+		if children.Length() != 5 {
+			t.Errorf("Expected 5 children, got %d", children.Length())
 		}
-		if children[1] != textNode {
+		if children.Item(1) != textNode {
 			t.Errorf("Expected textNode at index 1")
 		}
 	})
 
 	t.Run("Remove", func(t *testing.T) {
-		childrenBefore := len(parent.ChildNodes())
+		children := parent.ChildNodes()
+		childrenBefore := children.Length()
 		err := comment1.Remove()
 		if err != nil {
 			t.Errorf("Remove() error = %v", err)
 		}
 
-		childrenAfter := len(parent.ChildNodes())
+		children = parent.ChildNodes()
+		childrenAfter := children.Length()
 		if childrenAfter != childrenBefore-1 {
 			t.Errorf("Expected one less child after remove")
 		}
@@ -233,13 +240,13 @@ func TestDocumentType_ChildNodeMethods(t *testing.T) {
 		}
 
 		children := doc.ChildNodes()
-		if len(children) != 3 {
-			t.Errorf("Expected 3 children, got %d", len(children))
+		if children.Length() != 3 {
+			t.Errorf("Expected 3 children, got %d", children.Length())
 		}
-		if children[0] != comment {
+		if children.Item(0) != comment {
 			t.Errorf("Expected comment at index 0")
 		}
-		if children[1] != doctype {
+		if children.Item(1) != doctype {
 			t.Errorf("Expected doctype at index 1")
 		}
 	})
@@ -252,10 +259,10 @@ func TestDocumentType_ChildNodeMethods(t *testing.T) {
 		}
 
 		children := doc.ChildNodes()
-		if len(children) != 4 {
-			t.Errorf("Expected 4 children, got %d", len(children))
+		if children.Length() != 4 {
+			t.Errorf("Expected 4 children, got %d", children.Length())
 		}
-		if children[2] != pi {
+		if children.Item(2) != pi {
 			t.Errorf("Expected PI at index 2")
 		}
 	})
@@ -270,7 +277,8 @@ func TestDocumentType_ChildNodeMethods(t *testing.T) {
 		children := doc.ChildNodes()
 		// Should still have same number of children
 		found := false
-		for _, child := range children {
+		for i := 0; i < children.Length(); i++ {
+			child := children.Item(i)
 			if child == newDoctype {
 				found = true
 				break
@@ -304,10 +312,10 @@ func TestProcessingInstruction_ChildNodeMethods(t *testing.T) {
 		}
 
 		children := parent.ChildNodes()
-		if len(children) != 4 {
-			t.Errorf("Expected 4 children, got %d", len(children))
+		if children.Length() != 4 {
+			t.Errorf("Expected 4 children, got %d", children.Length())
 		}
-		if children[2] != newPI {
+		if children.Item(2) != newPI {
 			t.Errorf("Expected newPI at index 2")
 		}
 	})
@@ -319,31 +327,35 @@ func TestProcessingInstruction_ChildNodeMethods(t *testing.T) {
 		}
 
 		children := parent.ChildNodes()
-		if len(children) != 5 {
-			t.Errorf("Expected 5 children, got %d", len(children))
+		if children.Length() != 5 {
+			t.Errorf("Expected 5 children, got %d", children.Length())
 		}
-		if children[1].NodeType() != TextNode {
+		if children.Item(1).NodeType() != TextNode {
 			t.Errorf("Expected text node at index 1")
 		}
-		if children[1].NodeValue() != "text after PI" {
-			t.Errorf("Expected 'text after PI', got '%s'", children[1].NodeValue())
+		if children.Item(1).NodeValue() != "text after PI" {
+			t.Errorf("Expected 'text after PI', got '%s'", children.Item(1).NodeValue())
 		}
 	})
 
 	t.Run("Remove", func(t *testing.T) {
-		childrenBefore := len(parent.ChildNodes())
+		children := parent.ChildNodes()
+		childrenBefore := children.Length()
 		err := pi1.Remove()
 		if err != nil {
 			t.Errorf("Remove() error = %v", err)
 		}
 
-		childrenAfter := len(parent.ChildNodes())
+		children = parent.ChildNodes()
+		childrenAfter := children.Length()
 		if childrenAfter != childrenBefore-1 {
 			t.Errorf("Expected one less child after remove")
 		}
 
 		// Verify pi1 is no longer in the tree
-		for _, child := range parent.ChildNodes() {
+		children = parent.ChildNodes()
+		for i := 0; i < children.Length(); i++ {
+			child := children.Item(i)
 			if child == pi1 {
 				t.Errorf("pi1 should have been removed from parent")
 			}
@@ -397,21 +409,21 @@ func TestChildNode_DocumentFragmentCreation(t *testing.T) {
 		}
 
 		children := parent.ChildNodes()
-		if len(children) != 4 {
-			t.Errorf("Expected 4 children, got %d", len(children))
+		if children.Length() != 4 {
+			t.Errorf("Expected 4 children, got %d", children.Length())
 		}
 
 		// Verify all nodes were inserted in correct order
-		if children[0] != text1 {
+		if children.Item(0) != text1 {
 			t.Errorf("Expected text1 at index 0")
 		}
-		if children[1] != text2 {
+		if children.Item(1) != text2 {
 			t.Errorf("Expected text2 at index 1")
 		}
-		if children[2] != elem2 {
+		if children.Item(2) != elem2 {
 			t.Errorf("Expected elem2 at index 2")
 		}
-		if children[3] != elem {
+		if children.Item(3) != elem {
 			t.Errorf("Expected original elem at index 3")
 		}
 	})
@@ -425,18 +437,18 @@ func TestChildNode_DocumentFragmentCreation(t *testing.T) {
 
 		children := parent.ChildNodes()
 		// Should have text1, text2, elem2, elem, "prefix", newElem, "suffix"
-		if len(children) != 7 {
-			t.Errorf("Expected 7 children, got %d", len(children))
+		if children.Length() != 7 {
+			t.Errorf("Expected 7 children, got %d", children.Length())
 		}
 
 		// Verify the last three are our new nodes
-		if children[4].NodeValue() != "prefix" {
+		if children.Item(4).NodeValue() != "prefix" {
 			t.Errorf("Expected 'prefix' at index 4")
 		}
-		if children[5] != newElem {
+		if children.Item(5) != newElem {
 			t.Errorf("Expected newElem at index 5")
 		}
-		if children[6].NodeValue() != "suffix" {
+		if children.Item(6).NodeValue() != "suffix" {
 			t.Errorf("Expected 'suffix' at index 6")
 		}
 	})

@@ -48,13 +48,19 @@ func NewElement(tagName string, doc *Document) *Element {
 	// Parse qualified name for legacy compatibility
 	info := ParseQualifiedName(tagName)
 
+	// For HTML elements, default to HTML namespace if no namespace is specified
+	namespaceURI := info.NamespaceURI
+	if namespaceURI == "" && isHTMLElement(tagName) {
+		namespaceURI = htmlNamespace
+	}
+
 	elem := &Element{
 		nodeImpl: nodeImpl{
 			nodeType:      ElementNode,
 			nodeName:      tagName, // NodeName for Element is its tagName
 			ownerDocument: doc,
 		},
-		namespaceURI: info.NamespaceURI,
+		namespaceURI: namespaceURI,
 		prefix:       info.Prefix,
 		localName:    info.LocalName,
 		tagName:      tagName,
@@ -62,6 +68,34 @@ func NewElement(tagName string, doc *Document) *Element {
 	}
 	elem.nodeImpl.self = elem // Set the self reference
 	return elem
+}
+
+// isHTMLElement checks if a tag name is a known HTML element
+func isHTMLElement(tagName string) bool {
+	htmlElements := map[string]bool{
+		"a": true, "abbr": true, "address": true, "area": true, "article": true, "aside": true, "audio": true,
+		"b": true, "base": true, "bdi": true, "bdo": true, "blockquote": true, "body": true, "br": true, "button": true,
+		"canvas": true, "caption": true, "cite": true, "code": true, "col": true, "colgroup": true,
+		"data": true, "datalist": true, "dd": true, "del": true, "details": true, "dfn": true, "dialog": true, "div": true, "dl": true, "dt": true,
+		"em": true, "embed": true,
+		"fieldset": true, "figcaption": true, "figure": true, "footer": true, "form": true,
+		"h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true, "head": true, "header": true, "hgroup": true, "hr": true, "html": true,
+		"i": true, "iframe": true, "img": true, "input": true, "ins": true,
+		"kbd":   true,
+		"label": true, "legend": true, "li": true, "link": true,
+		"main": true, "map": true, "mark": true, "menu": true, "meta": true, "meter": true,
+		"nav": true, "noscript": true,
+		"object": true, "ol": true, "optgroup": true, "option": true, "output": true,
+		"p": true, "picture": true, "pre": true, "progress": true,
+		"q":  true,
+		"rp": true, "rt": true, "ruby": true,
+		"s": true, "samp": true, "script": true, "section": true, "select": true, "slot": true, "small": true, "source": true, "span": true, "strong": true, "style": true, "sub": true, "summary": true, "sup": true,
+		"table": true, "tbody": true, "td": true, "template": true, "textarea": true, "tfoot": true, "th": true, "thead": true, "time": true, "title": true, "tr": true, "track": true,
+		"u": true, "ul": true,
+		"var": true, "video": true,
+		"wbr": true,
+	}
+	return htmlElements[strings.ToLower(tagName)]
 }
 
 // NewElementNS creates a new Element node with namespace support.
@@ -442,7 +476,9 @@ func (e *Element) querySelectorRecursive(selectors string, includeRoot bool) *El
 	}
 
 	// Search through all direct children in order
-	for _, child := range e.ChildNodes() {
+	children := e.ChildNodes()
+	for i := 0; i < children.Length(); i++ {
+		child := children.Item(i)
 		if elem, ok := child.(*Element); ok {
 			// Check if this child element matches
 			if matchSimpleSelector(elem, selectors) {
@@ -458,10 +494,10 @@ func (e *Element) querySelectorRecursive(selectors string, includeRoot bool) *El
 }
 
 // QuerySelectorAll returns all element descendants of this element that match selectors
-func (e *Element) QuerySelectorAll(selectors string) NodeList {
+func (e *Element) QuerySelectorAll(selectors string) *NodeList {
 	// Simple implementation for now - supports basic selectors
 	// TODO: Integrate with full CSS selector engine to avoid circular dependency
-	var matchingNodes NodeList
+	var matchingNodes []Node
 	Traverse(e, func(n Node) bool {
 		if n == e {
 			return true // Skip the root element itself
@@ -473,14 +509,16 @@ func (e *Element) QuerySelectorAll(selectors string) NodeList {
 		}
 		return true // Continue traversal
 	})
-	return matchingNodes
+	return NewNodeList(matchingNodes)
 }
 
 // findElementByIdRecursive performs a depth-first search for an element with the given ID.
 // It properly stops traversal when the first match is found.
 func (e *Element) findElementByIdRecursive(id string) *Element {
 	// Search through all direct children
-	for _, child := range e.ChildNodes() {
+	children := e.ChildNodes()
+	for i := 0; i < children.Length(); i++ {
+		child := children.Item(i)
 		if elem, ok := child.(*Element); ok {
 			// Check if this element has the target ID
 			if elem.GetAttribute("id") == id {
@@ -501,7 +539,9 @@ func (e *Element) InnerHTML() string {
 		// TODO: Implement actual HTML serialization
 		// For now, a placeholder
 		content := ""
-		for _, child := range e.ChildNodes() {
+		children := e.ChildNodes()
+		for i := 0; i < children.Length(); i++ {
+			child := children.Item(i)
 			// This is a very basic placeholder.
 			// A proper implementation would recursively serialize children.
 			if child.NodeType() == TextNode {
@@ -641,9 +681,10 @@ func (e *Element) InsertAdjacentHTML(position, html string) error {
 				parentChildren := parent.ChildNodes()
 
 				// Find the next sibling after the previously inserted node
-				for j, child := range parentChildren {
-					if child == prevNode && j+1 < len(parentChildren) {
-						nextSibling = parentChildren[j+1]
+				for j := 0; j < parentChildren.Length(); j++ {
+					child := parentChildren.Item(j)
+					if child == prevNode && j+1 < parentChildren.Length() {
+						nextSibling = parentChildren.Item(j + 1)
 						break
 					}
 				}
@@ -682,7 +723,9 @@ func (e *Element) InsertAdjacentHTML(position, html string) error {
 		// Find the next sibling
 		var nextSibling Node
 		found := false
-		for _, child := range parent.ChildNodes() {
+		parentChildren := parent.ChildNodes()
+		for i := 0; i < parentChildren.Length(); i++ {
+			child := parentChildren.Item(i)
 			if found {
 				nextSibling = child
 				break
@@ -850,7 +893,10 @@ func (e *Element) After(nodes ...interface{}) error {
 	// Find the next viable sibling (not in the nodes being inserted)
 	var excludeNodes []Node
 	if fragment, ok := convertedNode.(*DocumentFragment); ok {
-		excludeNodes = fragment.ChildNodes()
+		fragmentChildren := fragment.ChildNodes()
+		for i := 0; i < fragmentChildren.Length(); i++ {
+			excludeNodes = append(excludeNodes, fragmentChildren.Item(i))
+		}
 	} else {
 		excludeNodes = []Node{convertedNode}
 	}
@@ -909,12 +955,13 @@ func (e *Element) PreviousElementSibling() *Element {
 	}
 
 	siblings := parent.ChildNodes()
-	for i := len(siblings) - 1; i >= 0; i-- {
-		if siblings[i] == e {
+	for i := siblings.Length() - 1; i >= 0; i-- {
+		if siblings.Item(i) == e {
 			// Found this element, now look backwards for an element sibling
 			for j := i - 1; j >= 0; j-- {
-				if siblings[j].NodeType() == ElementNode {
-					return siblings[j].(*Element)
+				sibling := siblings.Item(j)
+				if sibling.NodeType() == ElementNode {
+					return sibling.(*Element)
 				}
 			}
 			break
@@ -931,12 +978,14 @@ func (e *Element) NextElementSibling() *Element {
 	}
 
 	siblings := parent.ChildNodes()
-	for i, sibling := range siblings {
+	for i := 0; i < siblings.Length(); i++ {
+		sibling := siblings.Item(i)
 		if sibling == e {
 			// Found this element, now look forwards for an element sibling
-			for j := i + 1; j < len(siblings); j++ {
-				if siblings[j].NodeType() == ElementNode {
-					return siblings[j].(*Element)
+			for j := i + 1; j < siblings.Length(); j++ {
+				nextSibling := siblings.Item(j)
+				if nextSibling.NodeType() == ElementNode {
+					return nextSibling.(*Element)
 				}
 			}
 			break

@@ -81,7 +81,10 @@ func (pi *ProcessingInstruction) After(nodes ...interface{}) error {
 	// Find the next viable sibling (not in the nodes being inserted)
 	var excludeNodes []Node
 	if fragment, ok := convertedNode.(*DocumentFragment); ok {
-		excludeNodes = fragment.ChildNodes()
+		fragmentChildren := fragment.ChildNodes()
+		for i := 0; i < fragmentChildren.Length(); i++ {
+			excludeNodes = append(excludeNodes, fragmentChildren.Item(i))
+		}
 	} else {
 		excludeNodes = []Node{convertedNode}
 	}

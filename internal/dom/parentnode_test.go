@@ -184,17 +184,17 @@ func TestParentNodePrepend(t *testing.T) {
 		}
 
 		// Should create a document fragment with all nodes
-		if len(parent2.ChildNodes()) != 3 {
-			t.Errorf("Expected 3 children, got %d", len(parent2.ChildNodes()))
+		if parent2.ChildNodes().Length() != 3 {
+			t.Errorf("Expected 3 children, got %d", parent2.ChildNodes().Length())
 		}
 
-		if parent2.ChildNodes()[0] != elem1 {
+		if parent2.ChildNodes().Item(0) != elem1 {
 			t.Error("Expected first child to be elem1")
 		}
-		if parent2.ChildNodes()[1].NodeValue() != "text" {
+		if parent2.ChildNodes().Item(1).NodeValue() != "text" {
 			t.Error("Expected second child to be text node with 'text'")
 		}
-		if parent2.ChildNodes()[2] != elem2 {
+		if parent2.ChildNodes().Item(2) != elem2 {
 			t.Error("Expected third child to be elem2")
 		}
 	})
@@ -243,17 +243,17 @@ func TestParentNodeAppend(t *testing.T) {
 			t.Errorf("Append failed: %v", err)
 		}
 
-		if len(parent2.ChildNodes()) != 3 {
-			t.Errorf("Expected 3 children, got %d", len(parent2.ChildNodes()))
+		if parent2.ChildNodes().Length() != 3 {
+			t.Errorf("Expected 3 children, got %d", parent2.ChildNodes().Length())
 		}
 
-		if parent2.ChildNodes()[0] != elem1 {
+		if parent2.ChildNodes().Item(0) != elem1 {
 			t.Error("Expected first child to be elem1")
 		}
-		if parent2.ChildNodes()[1].NodeValue() != "heading" {
+		if parent2.ChildNodes().Item(1).NodeValue() != "heading" {
 			t.Error("Expected second child to be text node with 'heading'")
 		}
-		if parent2.ChildNodes()[2] != elem2 {
+		if parent2.ChildNodes().Item(2) != elem2 {
 			t.Error("Expected third child to be elem2")
 		}
 	})
@@ -277,17 +277,17 @@ func TestParentNodeReplaceChildren(t *testing.T) {
 			t.Errorf("ReplaceChildren failed: %v", err)
 		}
 
-		if len(parent.ChildNodes()) != 3 {
-			t.Errorf("Expected 3 children after replacement, got %d", len(parent.ChildNodes()))
+		if parent.ChildNodes().Length() != 3 {
+			t.Errorf("Expected 3 children after replacement, got %d", parent.ChildNodes().Length())
 		}
 
-		if parent.ChildNodes()[0] != elem1 {
+		if parent.ChildNodes().Item(0) != elem1 {
 			t.Error("Expected first child to be new elem1")
 		}
-		if parent.ChildNodes()[1].NodeValue() != "new text" {
+		if parent.ChildNodes().Item(1).NodeValue() != "new text" {
 			t.Error("Expected second child to be new text node")
 		}
-		if parent.ChildNodes()[2] != elem2 {
+		if parent.ChildNodes().Item(2) != elem2 {
 			t.Error("Expected third child to be new elem2")
 		}
 	})
@@ -298,8 +298,8 @@ func TestParentNodeReplaceChildren(t *testing.T) {
 			t.Errorf("ReplaceChildren with no args failed: %v", err)
 		}
 
-		if len(parent.ChildNodes()) != 0 {
-			t.Errorf("Expected 0 children after empty replacement, got %d", len(parent.ChildNodes()))
+		if parent.ChildNodes().Length() != 0 {
+			t.Errorf("Expected 0 children after empty replacement, got %d", parent.ChildNodes().Length())
 		}
 	})
 }
@@ -325,13 +325,14 @@ func TestParentNodeMoveBefore(t *testing.T) {
 		}
 
 		// Order should now be: elem3, elem1, elem2
-		if parent.ChildNodes()[0] != elem3 {
+		children := parent.ChildNodes()
+		if children.Item(0) != elem3 {
 			t.Error("Expected elem3 to be first after move")
 		}
-		if parent.ChildNodes()[1] != elem1 {
+		if children.Item(1) != elem1 {
 			t.Error("Expected elem1 to be second after move")
 		}
-		if parent.ChildNodes()[2] != elem2 {
+		if children.Item(2) != elem2 {
 			t.Error("Expected elem2 to be third after move")
 		}
 	})
@@ -344,23 +345,25 @@ func TestParentNodeMoveBefore(t *testing.T) {
 		}
 
 		// Order should now be: elem3, elem2, elem1
-		if parent.ChildNodes()[0] != elem3 {
+		children := parent.ChildNodes()
+		if children.Item(0) != elem3 {
 			t.Error("Expected elem3 to be first")
 		}
-		if parent.ChildNodes()[1] != elem2 {
+		if children.Item(1) != elem2 {
 			t.Error("Expected elem2 to be second")
 		}
-		if parent.ChildNodes()[2] != elem1 {
+		if children.Item(2) != elem1 {
 			t.Error("Expected elem1 to be last after move to end")
 		}
 	})
 
 	t.Run("MoveBefore with node as its own reference", func(t *testing.T) {
 		// Initial order: elem3, elem2, elem1
+		children := parent.ChildNodes()
 		t.Logf("Before MoveBefore(elem2, elem2): %v, %v, %v",
-			parent.ChildNodes()[0].NodeName(),
-			parent.ChildNodes()[1].NodeName(),
-			parent.ChildNodes()[2].NodeName())
+			children.Item(0).NodeName(),
+			children.Item(1).NodeName(),
+			children.Item(2).NodeName())
 
 		// Move elem2 before itself (should move to next sibling's position)
 		err := parent.MoveBefore(elem2, elem2)
@@ -368,20 +371,21 @@ func TestParentNodeMoveBefore(t *testing.T) {
 			t.Errorf("MoveBefore with self reference failed: %v", err)
 		}
 
+		children = parent.ChildNodes()
 		t.Logf("After MoveBefore(elem2, elem2): %v, %v, %v",
-			parent.ChildNodes()[0].NodeName(),
-			parent.ChildNodes()[1].NodeName(),
-			parent.ChildNodes()[2].NodeName())
+			children.Item(0).NodeName(),
+			children.Item(1).NodeName(),
+			children.Item(2).NodeName())
 
 		// Should move elem2 before its next sibling (elem1)
 		// Order should be: elem3, elem2, elem1
-		if parent.ChildNodes()[0] != elem3 {
+		if children.Item(0) != elem3 {
 			t.Error("Expected elem3 to be first")
 		}
-		if parent.ChildNodes()[1] != elem2 {
+		if children.Item(1) != elem2 {
 			t.Error("Expected elem2 to be second")
 		}
-		if parent.ChildNodes()[2] != elem1 {
+		if children.Item(2) != elem1 {
 			t.Error("Expected elem1 to be third")
 		}
 	})
@@ -396,14 +400,15 @@ func TestParentNodeMoveBefore(t *testing.T) {
 		}
 
 		// external should now be parent of elem2
-		if len(parent.ChildNodes()) != 4 {
-			t.Errorf("Expected 4 children after external move, got %d", len(parent.ChildNodes()))
+		children := parent.ChildNodes()
+		if children.Length() != 4 {
+			t.Errorf("Expected 4 children after external move, got %d", children.Length())
 		}
 
 		// Find external's position
 		var externalIndex = -1
-		for i, child := range parent.ChildNodes() {
-			if child == external {
+		for i := 0; i < int(children.Length()); i++ {
+			if children.Item(i) == external {
 				externalIndex = i
 				break
 			}
@@ -414,7 +419,7 @@ func TestParentNodeMoveBefore(t *testing.T) {
 		}
 
 		// elem2 should be after external
-		if externalIndex+1 >= len(parent.ChildNodes()) || parent.ChildNodes()[externalIndex+1] != elem2 {
+		if externalIndex+1 >= int(children.Length()) || children.Item(externalIndex+1) != elem2 {
 			t.Error("Expected elem2 to be after external element")
 		}
 	})
@@ -545,37 +550,37 @@ func TestParentNodeQuerySelectorAll(t *testing.T) {
 
 	t.Run("QuerySelectorAll by tag name", func(t *testing.T) {
 		results := parent.QuerySelectorAll("span")
-		if len(results) != 3 {
-			t.Errorf("Expected 3 span elements, got %d", len(results))
+		if results.Length() != 3 {
+			t.Errorf("Expected 3 span elements, got %d", results.Length())
 		}
 
-		if results[0] != span1 || results[1] != span2 || results[2] != span3 {
+		if results.Item(0) != span1 || results.Item(1) != span2 || results.Item(2) != span3 {
 			t.Error("Expected spans in document order")
 		}
 	})
 
 	t.Run("QuerySelectorAll by class", func(t *testing.T) {
 		results := parent.QuerySelectorAll(".highlight")
-		if len(results) != 3 {
-			t.Errorf("Expected 3 elements with 'highlight' class, got %d", len(results))
+		if results.Length() != 3 {
+			t.Errorf("Expected 3 elements with 'highlight' class, got %d", results.Length())
 		}
 
-		if results[0] != span1 || results[1] != span2 || results[2] != strong {
+		if results.Item(0) != span1 || results.Item(1) != span2 || results.Item(2) != strong {
 			t.Error("Expected elements with highlight class in document order")
 		}
 	})
 
 	t.Run("QuerySelectorAll with no matches", func(t *testing.T) {
 		results := parent.QuerySelectorAll(".nonexistent")
-		if len(results) != 0 {
-			t.Errorf("Expected 0 elements for nonexistent class, got %d", len(results))
+		if results.Length() != 0 {
+			t.Errorf("Expected 0 elements for nonexistent class, got %d", results.Length())
 		}
 	})
 
 	t.Run("QuerySelectorAll wildcard", func(t *testing.T) {
 		results := parent.QuerySelectorAll("*")
-		if len(results) != 5 { // 4 direct children + 1 nested strong
-			t.Errorf("Expected 5 elements for wildcard, got %d", len(results))
+		if results.Length() != 5 { // 4 direct children + 1 nested strong
+			t.Errorf("Expected 5 elements for wildcard, got %d", results.Length())
 		}
 	})
 }
@@ -629,17 +634,18 @@ func TestConvertNodesToNode(t *testing.T) {
 		}
 
 		fragment := result.(*DocumentFragment)
-		if len(fragment.ChildNodes()) != 3 {
-			t.Errorf("Expected 3 children in fragment, got %d", len(fragment.ChildNodes()))
+		children := fragment.ChildNodes()
+		if children.Length() != 3 {
+			t.Errorf("Expected 3 children in fragment, got %d", children.Length())
 		}
 
-		if fragment.ChildNodes()[0] != elem {
+		if children.Item(0) != elem {
 			t.Error("Expected first child to be span element")
 		}
-		if fragment.ChildNodes()[1].NodeValue() != "text" {
+		if children.Item(1).NodeValue() != "text" {
 			t.Error("Expected second child to be text node")
 		}
-		if fragment.ChildNodes()[2].NodeName() != "p" {
+		if children.Item(2).NodeName() != "p" {
 			t.Error("Expected third child to be p element")
 		}
 	})
@@ -715,17 +721,18 @@ func TestConvertNodesToNodeSpecCompliance(t *testing.T) {
 		}
 
 		// Check that all nodes are appended in order
-		if len(fragment.ChildNodes()) != 3 {
-			t.Errorf("DocumentFragment should contain all nodes, expected 3, got %d", len(fragment.ChildNodes()))
+		children := fragment.ChildNodes()
+		if children.Length() != 3 {
+			t.Errorf("DocumentFragment should contain all nodes, expected 3, got %d", children.Length())
 		}
 
-		if fragment.ChildNodes()[0] != elem1 {
+		if children.Item(0) != elem1 {
 			t.Error("First child should be elem1")
 		}
-		if fragment.ChildNodes()[1].NodeType() != TextNode || fragment.ChildNodes()[1].NodeValue() != "text" {
+		if children.Item(1).NodeType() != TextNode || children.Item(1).NodeValue() != "text" {
 			t.Error("Second child should be text node with 'text'")
 		}
-		if fragment.ChildNodes()[2] != elem2 {
+		if children.Item(2) != elem2 {
 			t.Error("Third child should be elem2")
 		}
 	})

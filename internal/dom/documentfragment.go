@@ -37,7 +37,9 @@ func (df *DocumentFragment) GetElementById(id string) *Element {
 // It properly stops traversal when the first match is found.
 func (df *DocumentFragment) findElementByIdRecursive(id string) *Element {
 	// Search through all direct children
-	for _, child := range df.ChildNodes() {
+	children := df.ChildNodes()
+	for i := 0; i < children.Length(); i++ {
+		child := children.Item(i)
 		if elem, ok := child.(*Element); ok {
 			// Check if this element has the target ID
 			if elem.GetAttribute("id") == id {
@@ -204,10 +206,10 @@ func (df *DocumentFragment) QuerySelector(selectors string) *Element {
 }
 
 // QuerySelectorAll returns all element descendants of this document fragment that match selectors
-func (df *DocumentFragment) QuerySelectorAll(selectors string) NodeList {
+func (df *DocumentFragment) QuerySelectorAll(selectors string) *NodeList {
 	// Simple implementation for now - supports basic selectors
 	// TODO: Integrate with full CSS selector engine to avoid circular dependency
-	var matchingNodes NodeList
+	var matchingNodes []Node
 	Traverse(df, func(n Node) bool {
 		if n == df {
 			return true // Skip the root document fragment itself
@@ -219,7 +221,7 @@ func (df *DocumentFragment) QuerySelectorAll(selectors string) NodeList {
 		}
 		return true // Continue traversal
 	})
-	return matchingNodes
+	return NewNodeList(matchingNodes)
 }
 
 // matchesSimpleSelector checks if an element matches a basic CSS selector

@@ -108,7 +108,9 @@ func (d *Document) DocumentElement() *Element {
 // Body returns the body element
 func (d *Document) Body() *Element {
 	if docElem := d.DocumentElement(); docElem != nil {
-		for _, child := range docElem.ChildNodes() {
+		children := docElem.ChildNodes()
+		for i := 0; i < children.Length(); i++ {
+			child := children.Item(i)
 			if elem, ok := child.(*Element); ok && elem.TagName() == "body" {
 				return elem
 			}
@@ -120,7 +122,9 @@ func (d *Document) Body() *Element {
 // Head returns the head element
 func (d *Document) Head() *Element {
 	if docElem := d.DocumentElement(); docElem != nil {
-		for _, child := range docElem.ChildNodes() {
+		children := docElem.ChildNodes()
+		for i := 0; i < children.Length(); i++ {
+			child := children.Item(i)
 			if elem, ok := child.(*Element); ok && elem.TagName() == "head" {
 				return elem
 			}
@@ -300,10 +304,10 @@ func (d *Document) QuerySelector(selectors string) *Element {
 }
 
 // QuerySelectorAll returns all element descendants of this document that match selectors
-func (d *Document) QuerySelectorAll(selectors string) NodeList {
+func (d *Document) QuerySelectorAll(selectors string) *NodeList {
 	// Simple implementation for now - supports basic selectors
 	// TODO: Integrate with full CSS selector engine to avoid circular dependency
-	var matchingNodes NodeList
+	var matchingNodes []Node
 	Traverse(d, func(n Node) bool {
 		if n == d {
 			return true // Skip the root document itself
@@ -315,7 +319,7 @@ func (d *Document) QuerySelectorAll(selectors string) NodeList {
 		}
 		return true // Continue traversal
 	})
-	return matchingNodes
+	return NewNodeList(matchingNodes)
 }
 
 // matchesSimpleSelector checks if an element matches a basic CSS selector

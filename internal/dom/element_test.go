@@ -24,8 +24,8 @@ func TestElementCreation(t *testing.T) {
 	if elem.ParentNode() != nil {
 		t.Errorf("Expected parent node to be nil")
 	}
-	if len(elem.ChildNodes()) != 0 {
-		t.Errorf("Expected no child nodes, got %d", len(elem.ChildNodes()))
+	if elem.ChildNodes().Length() != 0 {
+		t.Errorf("Expected no child nodes, got %d", elem.ChildNodes().Length())
 	}
 }
 
@@ -239,8 +239,9 @@ func TestElementTextContent(t *testing.T) {
 	}
 
 	// Verify it creates a text node child
-	if len(elem.ChildNodes()) != 1 {
-		t.Errorf("Expected 1 child node after setting text content, got %d", len(elem.ChildNodes()))
+	children := elem.ChildNodes()
+	if children.Length() != 1 {
+		t.Errorf("Expected 1 child node after setting text content, got %d", children.Length())
 	}
 	if elem.FirstChild().NodeType() != TextNode {
 		t.Errorf("Expected first child to be text node")
@@ -254,8 +255,9 @@ func TestElementTextContent(t *testing.T) {
 	if elem.TextContent() != "New Text" {
 		t.Errorf("Expected updated text content 'New Text', got '%s'", elem.TextContent())
 	}
-	if len(elem.ChildNodes()) != 1 {
-		t.Errorf("Expected 1 child node after updating text content, got %d", len(elem.ChildNodes()))
+	children = elem.ChildNodes()
+	if children.Length() != 1 {
+		t.Errorf("Expected 1 child node after updating text content, got %d", children.Length())
 	}
 
 	// Test with nested elements
@@ -297,8 +299,9 @@ func TestElementInnerHTML(t *testing.T) {
 	}
 
 	// Verify it clears existing children and creates text node
-	if len(elem.ChildNodes()) != 1 {
-		t.Errorf("Expected 1 child node after setting innerHTML, got %d", len(elem.ChildNodes()))
+	children := elem.ChildNodes()
+	if children.Length() != 1 {
+		t.Errorf("Expected 1 child node after setting innerHTML, got %d", children.Length())
 	}
 	if elem.FirstChild().NodeType() != TextNode {
 		t.Errorf("Expected first child to be text node")
@@ -488,22 +491,22 @@ func TestElementInsertAdjacentHTML(t *testing.T) {
 	}
 
 	children := container.ChildNodes()
-	if len(children) != 4 {
-		t.Errorf("Expected 4 children after beforebegin, got %d", len(children))
+	if children.Length() != 4 {
+		t.Errorf("Expected 4 children after beforebegin, got %d", children.Length())
 	}
 
 	// Check order: before, inserted text, target, after
-	if children[0] != before {
+	if children.Item(0) != before {
 		t.Errorf("Expected first child to still be 'before' element")
 	}
-	if children[1].NodeType() != TextNode || children[1].NodeValue() != "Hello" {
+	if children.Item(1).NodeType() != TextNode || children.Item(1).NodeValue() != "Hello" {
 		t.Errorf("Expected second child to be text node 'Hello', got type %d value '%s'",
-			children[1].NodeType(), children[1].NodeValue())
+			children.Item(1).NodeType(), children.Item(1).NodeValue())
 	}
-	if children[2] != target {
+	if children.Item(2) != target {
 		t.Errorf("Expected third child to be target element")
 	}
-	if children[3] != after {
+	if children.Item(3) != after {
 		t.Errorf("Expected fourth child to be 'after' element")
 	}
 
@@ -514,15 +517,15 @@ func TestElementInsertAdjacentHTML(t *testing.T) {
 	}
 
 	targetChildren := target.ChildNodes()
-	if len(targetChildren) != 2 {
-		t.Errorf("Expected 2 children in target after afterbegin, got %d", len(targetChildren))
+	if targetChildren.Length() != 2 {
+		t.Errorf("Expected 2 children in target after afterbegin, got %d", targetChildren.Length())
 	}
 
 	// First child should be the inserted element
-	if targetChildren[0].NodeType() != ElementNode {
+	if targetChildren.Item(0).NodeType() != ElementNode {
 		t.Errorf("Expected first child to be element node")
 	}
-	emElement := targetChildren[0].(*Element)
+	emElement := targetChildren.Item(0).(*Element)
 	if emElement.TagName() != "em" {
 		t.Errorf("Expected first child to be 'em' element, got '%s'", emElement.TagName())
 	}
@@ -534,12 +537,12 @@ func TestElementInsertAdjacentHTML(t *testing.T) {
 	}
 
 	targetChildren = target.ChildNodes()
-	if len(targetChildren) != 3 {
-		t.Errorf("Expected 3 children in target after beforeend, got %d", len(targetChildren))
+	if targetChildren.Length() != 3 {
+		t.Errorf("Expected 3 children in target after beforeend, got %d", targetChildren.Length())
 	}
 
 	// Last child should be the inserted element
-	lastChild := targetChildren[len(targetChildren)-1]
+	lastChild := targetChildren.Item(targetChildren.Length() - 1)
 	if lastChild.NodeType() != ElementNode {
 		t.Errorf("Expected last child to be element node")
 	}
@@ -555,14 +558,14 @@ func TestElementInsertAdjacentHTML(t *testing.T) {
 	}
 
 	children = container.ChildNodes()
-	if len(children) != 5 {
-		t.Errorf("Expected 5 children after afterend, got %d", len(children))
+	if children.Length() != 5 {
+		t.Errorf("Expected 5 children after afterend, got %d", children.Length())
 	}
 
 	// Check that "World" was inserted after target
-	if children[3].NodeType() != TextNode || children[3].NodeValue() != "World" {
+	if children.Item(3).NodeType() != TextNode || children.Item(3).NodeValue() != "World" {
 		t.Errorf("Expected fourth child to be text node 'World', got type %d value '%s'",
-			children[3].NodeType(), children[3].NodeValue())
+			children.Item(3).NodeType(), children.Item(3).NodeValue())
 	}
 }
 
@@ -636,11 +639,11 @@ func TestElementInsertAdjacentHTMLBasicParsing(t *testing.T) {
 	}
 
 	children := target.ChildNodes()
-	if len(children) != 1 || children[0].NodeType() != TextNode {
+	if children.Length() != 1 || children.Item(0).NodeType() != TextNode {
 		t.Errorf("Expected one text node child")
 	}
-	if children[0].NodeValue() != "Plain text" {
-		t.Errorf("Expected text content 'Plain text', got '%s'", children[0].NodeValue())
+	if children.Item(0).NodeValue() != "Plain text" {
+		t.Errorf("Expected text content 'Plain text', got '%s'", children.Item(0).NodeValue())
 	}
 
 	// Test simple element
@@ -650,15 +653,15 @@ func TestElementInsertAdjacentHTMLBasicParsing(t *testing.T) {
 	}
 
 	children = target.ChildNodes()
-	if len(children) != 2 {
-		t.Errorf("Expected 2 children after adding element, got %d", len(children))
+	if children.Length() != 2 {
+		t.Errorf("Expected 2 children after adding element, got %d", children.Length())
 	}
 
-	if children[1].NodeType() != ElementNode {
+	if children.Item(1).NodeType() != ElementNode {
 		t.Errorf("Expected second child to be element")
 	}
 
-	spanElement := children[1].(*Element)
+	spanElement := children.Item(1).(*Element)
 	if spanElement.TagName() != "span" {
 		t.Errorf("Expected span element, got '%s'", spanElement.TagName())
 	}
@@ -670,11 +673,11 @@ func TestElementInsertAdjacentHTMLBasicParsing(t *testing.T) {
 	}
 
 	children = target.ChildNodes()
-	if len(children) != 3 {
-		t.Errorf("Expected 3 children after adding element with attributes, got %d", len(children))
+	if children.Length() != 3 {
+		t.Errorf("Expected 3 children after adding element with attributes, got %d", children.Length())
 	}
 
-	divElement := children[2].(*Element)
+	divElement := children.Item(2).(*Element)
 	if divElement.TagName() != "div" {
 		t.Errorf("Expected div element, got '%s'", divElement.TagName())
 	}
@@ -692,11 +695,11 @@ func TestElementInsertAdjacentHTMLBasicParsing(t *testing.T) {
 	}
 
 	children = target.ChildNodes()
-	if len(children) != 4 {
-		t.Errorf("Expected 4 children after adding self-closing element, got %d", len(children))
+	if children.Length() != 4 {
+		t.Errorf("Expected 4 children after adding self-closing element, got %d", children.Length())
 	}
 
-	inputElement := children[3].(*Element)
+	inputElement := children.Item(3).(*Element)
 	if inputElement.TagName() != "input" {
 		t.Errorf("Expected input element, got '%s'", inputElement.TagName())
 	}
@@ -718,8 +721,8 @@ func TestElementInsertAdjacentHTMLEmpty(t *testing.T) {
 	}
 
 	// Should not add any children
-	if len(target.ChildNodes()) != 0 {
-		t.Errorf("Expected no children for empty string, got %d", len(target.ChildNodes()))
+	if target.ChildNodes().Length() != 0 {
+		t.Errorf("Expected no children for empty string, got %d", target.ChildNodes().Length())
 	}
 
 	// Test whitespace only
@@ -729,8 +732,8 @@ func TestElementInsertAdjacentHTMLEmpty(t *testing.T) {
 	}
 
 	// Should not add any children (whitespace gets trimmed)
-	if len(target.ChildNodes()) != 0 {
-		t.Errorf("Expected no children for whitespace only, got %d", len(target.ChildNodes()))
+	if target.ChildNodes().Length() != 0 {
+		t.Errorf("Expected no children for whitespace only, got %d", target.ChildNodes().Length())
 	}
 }
 

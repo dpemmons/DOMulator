@@ -71,16 +71,16 @@ func (hc *HTMLCollection) NamedItem(name string) *Element {
 	hc.mutex.RLock()
 	defer hc.mutex.RUnlock()
 
-	// First check for id attribute
+	// Search through elements in tree order and check both ID and name for each
+	// According to spec: "Return the first element in the collection for which at least one of the following is true"
 	for _, elem := range hc.cache {
+		// Check if it has an ID which is name
 		if elem.GetAttribute("id") == name {
 			return elem
 		}
-	}
 
-	// Then check for name attribute
-	for _, elem := range hc.cache {
-		if elem.GetAttribute("name") == name {
+		// Check if it is in the HTML namespace and has a name attribute whose value is name
+		if elem.NamespaceURI() == htmlNamespace && elem.GetAttribute("name") == name {
 			return elem
 		}
 	}
@@ -147,7 +147,9 @@ func (hc *HTMLCollection) buildCacheRecursive(node Node, isRoot bool) {
 	}
 
 	// Recursively check children
-	for _, child := range node.ChildNodes() {
+	children := node.ChildNodes()
+	for i := 0; i < children.Length(); i++ {
+		child := children.Item(i)
 		hc.buildCacheRecursive(child, false)
 	}
 }
