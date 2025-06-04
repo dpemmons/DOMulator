@@ -278,8 +278,7 @@ With DOMulator achieving production-ready status, we're adding a comprehensive *
 
 #### **Standards Documentation Hierarchy**
 ```
-standards/                           # NEW: Standards compliance architecture
-├── compliance/                      # Compliance tracking and validation
+# Standards documentation is now provided on-demand rather than maintained locally
 │   ├── dom-compliance.md           # DOM Standard compliance matrix
 │   ├── html-compliance.md          # HTML Standard compliance status  
 │   ├── fetch-compliance.md         # Fetch API compliance mapping

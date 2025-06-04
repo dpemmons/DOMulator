@@ -253,23 +253,7 @@ We have achieved comprehensive test coverage across the entire DOMulator framewo
 - **Future-Proofing**: Standards documentation will guide future enhancements and catch edge cases
 
 **Implementation Approach**:
-```
-standards/                           # Standards documentation hierarchy
-├── compliance/                      # Compliance tracking and matrices  
-│   ├── dom-compliance.md           # DOM Standard compliance status
-│   ├── fetch-compliance.md         # Fetch API compliance status
-│   ├── storage-compliance.md       # Storage API compliance status
-│   └── eventloop-compliance.md     # Event Loop compliance status
-├── specs/                          # Relevant standard sections
-│   ├── dom/                        # DOM Standard excerpts
-│   ├── html/                       # HTML Standard excerpts (parsing, event loop)
-│   ├── fetch/                      # Fetch Standard excerpts
-│   └── web-platform/               # Storage, URL APIs
-└── validation/                     # Test-to-spec mapping
-    ├── test-mapping.md            # Which tests validate which specs
-    ├── gap-analysis.md            # What we're missing vs specs
-    └── improvement-plan.md        # Roadmap for spec compliance
-```
+Standards documentation is now provided on-demand rather than maintained in a local standards/ directory. Relevant sections of WHATWG and W3C specifications are provided during development as needed.
 
 **Priority Standards to Address**:
 1. **WHATWG DOM Standard**: Node interfaces, tree manipulation, events (our core)
@@ -279,10 +263,9 @@ standards/                           # Standards documentation hierarchy
 5. **WHATWG URL Standard**: URL and URLSearchParams API compliance
 
 **4-Phase Implementation Plan**:
-- ✅ **Phase 1**: Standards Import & Organization - Fetch and organize relevant spec sections - **COMPLETED**
-  - Downloaded WHATWG DOM, HTML, Fetch, Storage, and URL standards.
-  - Created initial compliance matrix markdown files in `standards/compliance/`.
-- 🎯 **Phase 2**: Compliance Analysis - Map current implementation against standard requirements - **CURRENT FOCUS**
+- ✅ **Phase 1**: Standards Import & Organization - **COMPLETED**
+  - Standards documentation approach transitioned to on-demand provision
+- 🎯 **Phase 2**: Compliance Analysis - Map current implementation against standard requirements - **CURRENT FOCUS**  
 - **Phase 3**: Test Enhancement - Ensure tests cover all standard-required behaviors
 - **Phase 4**: Implementation Improvements - Fix compliance gaps and enhance edge cases
 

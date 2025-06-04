@@ -162,8 +162,7 @@ func (h *TestHarness) AssertSpecCompliance(specRef string, actual, expected inte
 
 **Standards Directory Structure**:
 ```
-standards/                           # NEW: Standards compliance framework
-├── compliance/                      # Compliance tracking matrices
+# Standards documentation is now provided on-demand rather than maintained locally
 │   ├── dom-compliance.md           # DOM Standard compliance status
 │   ├── html-compliance.md          # HTML Standard compliance status
 │   ├── fetch-compliance.md         # Fetch API compliance mapping

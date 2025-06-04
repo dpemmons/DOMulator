@@ -4,6 +4,27 @@
 
 ### Recently Completed ✅
 
+#### Standards Directory Removal (2025-06-04)
+**Completed transition from local standards documentation to on-demand provision**
+
+**Key Changes:**
+- **Removed standards/ directory**: Eliminated local storage of WHATWG and W3C specification documents
+- **Updated documentation approach**: Standards content now provided on-demand during development
+- **Removed utility scripts**: Deleted process_html_standard.sh, extract_html_links.py, split_markdown.py
+- **Updated memory bank**: All references to standards/ directory structure updated
+
+**Benefits:**
+- **Reduced repository size**: Eliminated large specification files from version control
+- **Dynamic standards access**: Specifications provided as needed during development
+- **Simplified maintenance**: No need to maintain local copies of evolving standards
+- **Focused development**: Standards referenced only when relevant to specific implementation work
+
+**Technical Changes:**
+- Removed entire standards/ directory tree
+- Updated memory-bank/activeContext.md, systemPatterns.md, techContext.md
+- Cleaned up utility scripts that were specific to standards processing
+- Standards compliance work continues with on-demand specification access
+
 #### Node Interface Specification Compliance (2025-06-04)
 **Completed Phase 3 of Node interface implementation achieving core Node interface compliance**
 
