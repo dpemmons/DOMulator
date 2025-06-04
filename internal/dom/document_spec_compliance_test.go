@@ -553,19 +553,94 @@ func testDocumentCreateTreeWalker(t *testing.T) {
 func TestDocumentElementCreationOptions(t *testing.T) {
 	doc := NewDocument()
 
-	// Test createElement with default options
+	// Test createElement with default options (no options)
 	elem := doc.CreateElement("div")
 	if elem == nil {
 		t.Error("Expected createElement to return an element")
 	}
+	if elem.IsValue() != "" {
+		t.Errorf("Expected isValue to be empty, got %s", elem.IsValue())
+	}
 
-	// Test createElementNS with default options
+	// Test createElement with ElementCreationOptions struct
+	options := ElementCreationOptions{Is: "my-button"}
+	elemWithOptions := doc.CreateElement("button", options)
+	if elemWithOptions == nil {
+		t.Error("Expected createElement with options to return an element")
+	}
+	if elemWithOptions.IsValue() != "my-button" {
+		t.Errorf("Expected isValue to be 'my-button', got %s", elemWithOptions.IsValue())
+	}
+	if elemWithOptions.GetAttribute("is") != "my-button" {
+		t.Errorf("Expected 'is' attribute to be 'my-button', got %s", elemWithOptions.GetAttribute("is"))
+	}
+
+	// Test createElement with string options (legacy)
+	elemWithString := doc.CreateElement("input", "my-input")
+	if elemWithString == nil {
+		t.Error("Expected createElement with string option to return an element")
+	}
+	if elemWithString.IsValue() != "my-input" {
+		t.Errorf("Expected isValue to be 'my-input', got %s", elemWithString.IsValue())
+	}
+
+	// Test createElement with map options (for JavaScript compatibility)
+	mapOptions := map[string]interface{}{"is": "my-div"}
+	elemWithMap := doc.CreateElement("div", mapOptions)
+	if elemWithMap == nil {
+		t.Error("Expected createElement with map options to return an element")
+	}
+	if elemWithMap.IsValue() != "my-div" {
+		t.Errorf("Expected isValue to be 'my-div', got %s", elemWithMap.IsValue())
+	}
+
+	// Test createElementNS with default options (no options)
 	elemNS, err := doc.CreateElementNS("http://www.w3.org/1999/xhtml", "div")
 	if err != nil {
 		t.Errorf("Expected createElementNS to succeed, got error: %v", err)
 	}
 	if elemNS == nil {
 		t.Error("Expected createElementNS to return an element")
+	}
+	if elemNS.IsValue() != "" {
+		t.Errorf("Expected isValue to be empty, got %s", elemNS.IsValue())
+	}
+
+	// Test createElementNS with ElementCreationOptions
+	elemNSWithOptions, err := doc.CreateElementNS("http://www.w3.org/1999/xhtml", "button", ElementCreationOptions{Is: "my-ns-button"})
+	if err != nil {
+		t.Errorf("Expected createElementNS with options to succeed, got error: %v", err)
+	}
+	if elemNSWithOptions == nil {
+		t.Error("Expected createElementNS with options to return an element")
+	}
+	if elemNSWithOptions.IsValue() != "my-ns-button" {
+		t.Errorf("Expected isValue to be 'my-ns-button', got %s", elemNSWithOptions.IsValue())
+	}
+	if elemNSWithOptions.GetAttribute("is") != "my-ns-button" {
+		t.Errorf("Expected 'is' attribute to be 'my-ns-button', got %s", elemNSWithOptions.GetAttribute("is"))
+	}
+
+	// Test createElementNS with nil options
+	elemNSWithNil, err := doc.CreateElementNS("http://www.w3.org/1999/xhtml", "span", nil)
+	if err != nil {
+		t.Errorf("Expected createElementNS with nil options to succeed, got error: %v", err)
+	}
+	if elemNSWithNil == nil {
+		t.Error("Expected createElementNS with nil options to return an element")
+	}
+	if elemNSWithNil.IsValue() != "" {
+		t.Errorf("Expected isValue to be empty with nil options, got %s", elemNSWithNil.IsValue())
+	}
+
+	// Test createElement with empty options
+	emptyOptions := ElementCreationOptions{}
+	elemWithEmpty := doc.CreateElement("p", emptyOptions)
+	if elemWithEmpty == nil {
+		t.Error("Expected createElement with empty options to return an element")
+	}
+	if elemWithEmpty.IsValue() != "" {
+		t.Errorf("Expected isValue to be empty with empty options, got %s", elemWithEmpty.IsValue())
 	}
 }
 

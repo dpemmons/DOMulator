@@ -23,6 +23,9 @@ type Element struct {
 	// dataset        *Dataset      // To be implemented
 	// style          *CSSStyleDeclaration // To be implemented
 
+	// CustomElement support per WHATWG DOM specification
+	isValue string // The "is" attribute for customized built-in elements
+
 	// Lazy-loaded properties
 	innerHTML   *string
 	outerHTML   *string
@@ -187,6 +190,16 @@ func (e *Element) Prefix() string {
 // LocalName returns the local name of the element.
 func (e *Element) LocalName() string {
 	return e.localName
+}
+
+// IsValue returns the "is" attribute value for customized built-in elements.
+func (e *Element) IsValue() string {
+	return e.isValue
+}
+
+// SetIsValue sets the "is" attribute value for customized built-in elements.
+func (e *Element) SetIsValue(is string) {
+	e.isValue = is
 }
 
 // SetAttribute sets the value of an attribute on the specified element.

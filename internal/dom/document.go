@@ -123,13 +123,40 @@ func (d *Document) Doctype() *DocumentType {
 }
 
 // CreateElement creates a new element with the given tag name
-func (d *Document) CreateElement(tagName string) *Element {
-	return NewElement(tagName, d)
+func (d *Document) CreateElement(tagName string, options ...ElementCreationOptionsInput) *Element {
+	elem := NewElement(tagName, d)
+
+	// Handle options if provided
+	if len(options) > 0 && options[0] != nil {
+		opts, err := parseElementCreationOptions(options[0])
+		if err == nil && opts.Is != "" {
+			elem.SetIsValue(opts.Is)
+			// Also set as an attribute for HTML compatibility
+			elem.SetAttribute("is", opts.Is)
+		}
+	}
+
+	return elem
 }
 
 // CreateElementNS creates a new element with the given namespace URI and qualified name
-func (d *Document) CreateElementNS(namespaceURI, qualifiedName string) (*Element, error) {
-	return NewElementNS(namespaceURI, qualifiedName, d)
+func (d *Document) CreateElementNS(namespaceURI, qualifiedName string, options ...ElementCreationOptionsInput) (*Element, error) {
+	elem, err := NewElementNS(namespaceURI, qualifiedName, d)
+	if err != nil {
+		return nil, err
+	}
+
+	// Handle options if provided
+	if len(options) > 0 && options[0] != nil {
+		opts, parseErr := parseElementCreationOptions(options[0])
+		if parseErr == nil && opts.Is != "" {
+			elem.SetIsValue(opts.Is)
+			// Also set as an attribute for HTML compatibility
+			elem.SetAttribute("is", opts.Is)
+		}
+	}
+
+	return elem, nil
 }
 
 // CreateTextNode creates a new text node with the given data
