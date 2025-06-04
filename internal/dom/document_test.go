@@ -526,3 +526,272 @@ func TestDocumentOwnershipConsistency(t *testing.T) {
 		t.Errorf("Comment node should maintain owner document when added to tree")
 	}
 }
+
+// TestDocumentFragmentGetElementById tests the NonElementParentNode mixin implementation
+// for DocumentFragment as specified in WHATWG DOM Standard 4.2.4
+func TestDocumentFragmentGetElementById(t *testing.T) {
+	t.Run("Basic element finding", func(t *testing.T) {
+		doc := NewDocument()
+		frag := doc.CreateDocumentFragment()
+		div1 := doc.CreateElement("div")
+		div2 := doc.CreateElement("div")
+		span := doc.CreateElement("span")
+
+		div1.SetAttribute("id", "container")
+		div2.SetAttribute("id", "content")
+		span.SetAttribute("id", "text")
+
+		// Build fragment structure: frag -> div1 -> div2 -> span
+		frag.AppendChild(div1)
+		div1.AppendChild(div2)
+		div2.AppendChild(span)
+
+		// Test finding existing elements
+		foundContainer := frag.GetElementById("container")
+		if foundContainer != div1 {
+			t.Errorf("Expected to find container div, got %v", foundContainer)
+		}
+
+		foundContent := frag.GetElementById("content")
+		if foundContent != div2 {
+			t.Errorf("Expected to find content div, got %v", foundContent)
+		}
+
+		foundText := frag.GetElementById("text")
+		if foundText != span {
+			t.Errorf("Expected to find text span, got %v", foundText)
+		}
+	})
+
+	t.Run("Non-existent and empty ID handling", func(t *testing.T) {
+		doc := NewDocument()
+		frag := doc.CreateDocumentFragment()
+		elem := doc.CreateElement("div")
+		elem.SetAttribute("id", "existing")
+		frag.AppendChild(elem)
+
+		// Test finding non-existent element
+		notFound := frag.GetElementById("nonexistent")
+		if notFound != nil {
+			t.Errorf("Expected not to find nonexistent element, got %v", notFound)
+		}
+
+		// Test with empty ID
+		notFoundEmpty := frag.GetElementById("")
+		if notFoundEmpty != nil {
+			t.Errorf("Expected not to find element with empty ID, got %v", notFoundEmpty)
+		}
+	})
+
+	t.Run("Tree order traversal with duplicate IDs", func(t *testing.T) {
+		doc := NewDocument()
+		frag := doc.CreateDocumentFragment()
+
+		// Create structure: frag -> [div1, div2] where div1 -> span1, div2 -> span2
+		div1 := doc.CreateElement("div")
+		div2 := doc.CreateElement("div")
+		span1 := doc.CreateElement("span")
+		span2 := doc.CreateElement("span")
+
+		// Both spans have the same ID
+		span1.SetAttribute("id", "duplicate")
+		span2.SetAttribute("id", "duplicate")
+
+		frag.AppendChild(div1)
+		frag.AppendChild(div2)
+		div1.AppendChild(span1)
+		div2.AppendChild(span2)
+
+		// Should return first element found in tree order (depth-first)
+		found := frag.GetElementById("duplicate")
+		if found != span1 {
+			t.Errorf("Expected to find first span in tree order, got %v", found)
+		}
+	})
+
+	t.Run("Complex nested structure", func(t *testing.T) {
+		doc := NewDocument()
+		frag := doc.CreateDocumentFragment()
+
+		// Create a more complex structure
+		article := doc.CreateElement("article")
+		header := doc.CreateElement("header")
+		section := doc.CreateElement("section")
+		footer := doc.CreateElement("footer")
+		nav := doc.CreateElement("nav")
+		aside := doc.CreateElement("aside")
+
+		article.SetAttribute("id", "main-article")
+		header.SetAttribute("id", "article-header")
+		section.SetAttribute("id", "article-content")
+		footer.SetAttribute("id", "article-footer")
+		nav.SetAttribute("id", "article-nav")
+		aside.SetAttribute("id", "article-sidebar")
+
+		// Build structure: frag -> article -> [header, section -> aside, footer]
+		//                                   header -> nav
+		frag.AppendChild(article)
+		article.AppendChild(header)
+		article.AppendChild(section)
+		article.AppendChild(footer)
+		header.AppendChild(nav)
+		section.AppendChild(aside)
+
+		// Test finding elements at different levels
+		foundArticle := frag.GetElementById("main-article")
+		if foundArticle != article {
+			t.Errorf("Expected to find article, got %v", foundArticle)
+		}
+
+		foundHeader := frag.GetElementById("article-header")
+		if foundHeader != header {
+			t.Errorf("Expected to find header, got %v", foundHeader)
+		}
+
+		foundNav := frag.GetElementById("article-nav")
+		if foundNav != nav {
+			t.Errorf("Expected to find nav, got %v", foundNav)
+		}
+
+		foundAside := frag.GetElementById("article-sidebar")
+		if foundAside != aside {
+			t.Errorf("Expected to find aside, got %v", foundAside)
+		}
+
+		foundFooter := frag.GetElementById("article-footer")
+		if foundFooter != footer {
+			t.Errorf("Expected to find footer, got %v", foundFooter)
+		}
+	})
+
+	t.Run("Empty fragment", func(t *testing.T) {
+		doc := NewDocument()
+		frag := doc.CreateDocumentFragment()
+
+		// Empty fragment should return nil for any ID
+		result := frag.GetElementById("anything")
+		if result != nil {
+			t.Errorf("Expected nil from empty fragment, got %v", result)
+		}
+	})
+
+	t.Run("Fragment with non-element children", func(t *testing.T) {
+		doc := NewDocument()
+		frag := doc.CreateDocumentFragment()
+
+		// Add text and comment nodes (no IDs to find)
+		text := doc.CreateTextNode("some text")
+		comment := doc.CreateComment("a comment")
+		elem := doc.CreateElement("p")
+		elem.SetAttribute("id", "paragraph")
+
+		frag.AppendChild(text)
+		frag.AppendChild(comment)
+		frag.AppendChild(elem)
+
+		// Should find the element despite non-element siblings
+		found := frag.GetElementById("paragraph")
+		if found != elem {
+			t.Errorf("Expected to find paragraph element, got %v", found)
+		}
+	})
+
+	t.Run("Tree order verification", func(t *testing.T) {
+		doc := NewDocument()
+		frag := doc.CreateDocumentFragment()
+
+		// Create structure to test specific tree order:
+		// frag -> [div1, div2]
+		//         div1 -> [span1, p1]
+		//                 span1 -> strong1
+		//         div2 -> [span2, p2]
+
+		div1 := doc.CreateElement("div")
+		div2 := doc.CreateElement("div")
+		span1 := doc.CreateElement("span")
+		span2 := doc.CreateElement("span")
+		p1 := doc.CreateElement("p")
+		p2 := doc.CreateElement("p")
+		strong1 := doc.CreateElement("strong")
+
+		// Set same ID on elements that should be found in specific order
+		span1.SetAttribute("id", "same")
+		strong1.SetAttribute("id", "same")
+		span2.SetAttribute("id", "same")
+
+		frag.AppendChild(div1)
+		frag.AppendChild(div2)
+		div1.AppendChild(span1)
+		div1.AppendChild(p1)
+		span1.AppendChild(strong1)
+		div2.AppendChild(span2)
+		div2.AppendChild(p2)
+
+		// Tree order should be: div1, span1, strong1, p1, div2, span2, p2
+		// So first element with id="same" should be span1
+		found := frag.GetElementById("same")
+		if found != span1 {
+			t.Errorf("Expected to find span1 first in tree order, got %v", found)
+		}
+	})
+}
+
+// TestNonElementParentNodeCompliance verifies that both Document and DocumentFragment
+// implement the NonElementParentNode mixin correctly according to the specification
+func TestNonElementParentNodeCompliance(t *testing.T) {
+	t.Run("Document implements NonElementParentNode", func(t *testing.T) {
+		doc := NewDocument()
+		// Verify Document has GetElementById method
+		elem := doc.CreateElement("div")
+		elem.SetAttribute("id", "test")
+		doc.AppendChild(elem)
+
+		found := doc.GetElementById("test")
+		if found != elem {
+			t.Errorf("Document.GetElementById not working correctly")
+		}
+	})
+
+	t.Run("DocumentFragment implements NonElementParentNode", func(t *testing.T) {
+		doc := NewDocument()
+		// Verify DocumentFragment has GetElementById method
+		frag := doc.CreateDocumentFragment()
+		elem := doc.CreateElement("div")
+		elem.SetAttribute("id", "test")
+		frag.AppendChild(elem)
+
+		found := frag.GetElementById("test")
+		if found != elem {
+			t.Errorf("DocumentFragment.GetElementById not working correctly")
+		}
+	})
+
+	t.Run("Specification compliance: descendants only", func(t *testing.T) {
+		doc := NewDocument()
+		// Both Document and DocumentFragment should only search descendants,
+		// not themselves (though they can't have IDs anyway)
+
+		// Test with DocumentFragment
+		frag := doc.CreateDocumentFragment()
+		elem := doc.CreateElement("div")
+		elem.SetAttribute("id", "child")
+		frag.AppendChild(elem)
+
+		// DocumentFragment itself has no ID and shouldn't be considered
+		found := frag.GetElementById("child")
+		if found != elem {
+			t.Errorf("DocumentFragment should find descendant element")
+		}
+
+		// Test with Document
+		doc2 := NewDocument()
+		elem2 := doc2.CreateElement("p")
+		elem2.SetAttribute("id", "doc-child")
+		doc2.AppendChild(elem2)
+
+		found2 := doc2.GetElementById("doc-child")
+		if found2 != elem2 {
+			t.Errorf("Document should find descendant element")
+		}
+	})
+}

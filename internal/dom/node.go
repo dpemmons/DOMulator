@@ -43,6 +43,10 @@ type Node interface {
 
 	CloneNode(deep bool) Node
 
+	// Length method as defined in DOM specification
+	Length() int
+	IsEmpty() bool
+
 	// Event Listener methods
 	AddEventListener(eventType string, listener func(Event))
 	RemoveEventListener(eventType string, listener func(Event))
@@ -564,6 +568,25 @@ func (n *nodeImpl) setOwnerDocument(doc *Document) {
 	for _, child := range n.childNodes {
 		child.setOwnerDocument(doc)
 	}
+}
+
+// Length implements the DOM specification requirement for determining the length of a node
+func (n *nodeImpl) Length() int {
+	switch n.nodeType {
+	case DocumentTypeNode, AttributeNode:
+		return 0
+	case TextNode, CommentNode, ProcessingInstructionNode, CDataSectionNode:
+		// For CharacterData nodes, return the length of the data
+		return len([]rune(n.nodeValue)) // Use runes for proper Unicode support
+	default:
+		// For other nodes (Document, Element, DocumentFragment), return number of children
+		return len(n.childNodes)
+	}
+}
+
+// IsEmpty returns true if the node's length is 0
+func (n *nodeImpl) IsEmpty() bool {
+	return n.Length() == 0
 }
 
 // validateHierarchy implements the DOM hierarchy validation rules

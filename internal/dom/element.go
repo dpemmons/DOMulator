@@ -300,6 +300,25 @@ func (e *Element) Children() *HTMLCollection {
 	return NewChildElementsCollection(e)
 }
 
+// findElementByIdRecursive performs a depth-first search for an element with the given ID.
+// It properly stops traversal when the first match is found.
+func (e *Element) findElementByIdRecursive(id string) *Element {
+	// Search through all direct children
+	for _, child := range e.ChildNodes() {
+		if elem, ok := child.(*Element); ok {
+			// Check if this element has the target ID
+			if elem.GetAttribute("id") == id {
+				return elem
+			}
+			// Recursively search in this element's descendants
+			if found := elem.findElementByIdRecursive(id); found != nil {
+				return found
+			}
+		}
+	}
+	return nil
+}
+
 // InnerHTML returns the HTML content of the element.
 func (e *Element) InnerHTML() string {
 	if e.innerHTML == nil {

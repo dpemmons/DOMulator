@@ -4,6 +4,276 @@ import (
 	"testing"
 )
 
+// TestNodeLength tests the DOM specification requirement for node length calculation
+func TestNodeLength(t *testing.T) {
+	doc := NewDocument()
+
+	// Test DocumentType and Attr nodes - should return 0
+	doctype := NewDocumentType("html", "", "", doc)
+	if doctype.Length() != 0 {
+		t.Errorf("Expected DocumentType length to be 0, got %d", doctype.Length())
+	}
+
+	attr := NewAttr("id", "test", doc)
+	if attr.Length() != 0 {
+		t.Errorf("Expected Attr length to be 0, got %d", attr.Length())
+	}
+
+	// Test CharacterData nodes - should return data length in runes (Unicode code points)
+	text := NewText("Hello 世界", doc) // Contains Unicode characters
+	expectedLength := len([]rune("Hello 世界"))
+	if text.Length() != expectedLength {
+		t.Errorf("Expected Text length to be %d, got %d", expectedLength, text.Length())
+	}
+
+	comment := NewComment("Test comment", doc)
+	expectedCommentLength := len([]rune("Test comment"))
+	if comment.Length() != expectedCommentLength {
+		t.Errorf("Expected Comment length to be %d, got %d", expectedCommentLength, comment.Length())
+	}
+
+	pi := NewProcessingInstruction("xml", "version=\"1.0\"", doc)
+	expectedPILength := len([]rune("version=\"1.0\""))
+	if pi.Length() != expectedPILength {
+		t.Errorf("Expected ProcessingInstruction length to be %d, got %d", expectedPILength, pi.Length())
+	}
+
+	// Test other nodes - should return number of children
+	element := NewElement("div", doc)
+	if element.Length() != 0 {
+		t.Errorf("Expected empty Element length to be 0, got %d", element.Length())
+	}
+
+	// Add children and test length
+	child1 := NewElement("span", doc)
+	child2 := NewText("text", doc)
+	element.AppendChild(child1)
+	element.AppendChild(child2)
+	if element.Length() != 2 {
+		t.Errorf("Expected Element with 2 children to have length 2, got %d", element.Length())
+	}
+
+	// Test Document length
+	if doc.Length() != 0 {
+		t.Errorf("Expected empty Document length to be 0, got %d", doc.Length())
+	}
+
+	htmlElement := NewElement("html", doc)
+	doc.AppendChild(htmlElement)
+	if doc.Length() != 1 {
+		t.Errorf("Expected Document with 1 child to have length 1, got %d", doc.Length())
+	}
+
+	// Test DocumentFragment length
+	fragment := NewDocumentFragment(doc)
+	if fragment.Length() != 0 {
+		t.Errorf("Expected empty DocumentFragment length to be 0, got %d", fragment.Length())
+	}
+
+	fragment.AppendChild(NewElement("div", doc))
+	fragment.AppendChild(NewText("text", doc))
+	if fragment.Length() != 2 {
+		t.Errorf("Expected DocumentFragment with 2 children to have length 2, got %d", fragment.Length())
+	}
+}
+
+// TestNodeIsEmpty tests the IsEmpty() method
+func TestNodeIsEmpty(t *testing.T) {
+	doc := NewDocument()
+
+	// Test empty nodes
+	emptyText := NewText("", doc)
+	if !emptyText.IsEmpty() {
+		t.Errorf("Expected empty Text to be empty")
+	}
+
+	emptyElement := NewElement("div", doc)
+	if !emptyElement.IsEmpty() {
+		t.Errorf("Expected empty Element to be empty")
+	}
+
+	// DocumentType and Attr are always empty
+	doctype := NewDocumentType("html", "", "", doc)
+	if !doctype.IsEmpty() {
+		t.Errorf("Expected DocumentType to be empty")
+	}
+
+	attr := NewAttr("id", "test", doc)
+	if !attr.IsEmpty() {
+		t.Errorf("Expected Attr to be empty")
+	}
+
+	// Test non-empty nodes
+	nonEmptyText := NewText("content", doc)
+	if nonEmptyText.IsEmpty() {
+		t.Errorf("Expected non-empty Text to not be empty")
+	}
+
+	elementWithChild := NewElement("div", doc)
+	elementWithChild.AppendChild(NewElement("span", doc))
+	if elementWithChild.IsEmpty() {
+		t.Errorf("Expected Element with child to not be empty")
+	}
+}
+
+// TestDocumentChildOrderConstraints tests the DOM specification constraints for Document children
+func TestDocumentChildOrderConstraints(t *testing.T) {
+	doc := NewDocument()
+
+	// Test that Document can only have one Element child
+	html1 := NewElement("html", doc)
+	html2 := NewElement("html", doc)
+
+	doc.AppendChild(html1) // Should succeed
+
+	// Attempting to add a second Element should panic
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("Expected panic when adding second Element to Document")
+		}
+	}()
+	doc.AppendChild(html2) // Should panic
+}
+
+// TestDocumentTypeConstraints tests DocumentType uniqueness constraint
+func TestDocumentTypeConstraints(t *testing.T) {
+	doc := NewDocument()
+
+	// Test that Document can only have one DocumentType child
+	doctype1 := NewDocumentType("html", "", "", doc)
+	doctype2 := NewDocumentType("html", "", "", doc)
+
+	doc.AppendChild(doctype1) // Should succeed
+
+	// Attempting to add a second DocumentType should panic
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("Expected panic when adding second DocumentType to Document")
+		}
+	}()
+	doc.AppendChild(doctype2) // Should panic
+}
+
+// TestAttrNodeConstraints tests that Attr nodes cannot have children
+func TestAttrNodeConstraints(t *testing.T) {
+	doc := NewDocument()
+	attr := NewAttr("id", "test", doc)
+	text := NewText("value", doc)
+
+	// Attempting to add a child to an Attr should panic
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("Expected panic when adding child to Attr node")
+		}
+	}()
+	attr.AppendChild(text) // Should panic
+}
+
+// TestCharacterDataNodeConstraints tests that CharacterData nodes cannot have children
+func TestCharacterDataNodeConstraints(t *testing.T) {
+	doc := NewDocument()
+	text := NewText("content", doc)
+	child := NewElement("span", doc)
+
+	// Attempting to add a child to a Text node should panic
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("Expected panic when adding child to Text node")
+		}
+	}()
+	text.AppendChild(child) // Should panic
+}
+
+// TestDocumentTypeNodeConstraints tests that DocumentType nodes cannot have children
+func TestDocumentTypeNodeConstraints(t *testing.T) {
+	doc := NewDocument()
+	doctype := NewDocumentType("html", "", "", doc)
+	child := NewElement("span", doc)
+
+	// Attempting to add a child to a DocumentType node should panic
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("Expected panic when adding child to DocumentType node")
+		}
+	}()
+	doctype.AppendChild(child) // Should panic
+}
+
+// TestElementChildConstraints tests Element child type constraints
+func TestElementChildConstraints(t *testing.T) {
+	doc := NewDocument()
+	element := NewElement("div", doc)
+	doctype := NewDocumentType("html", "", "", doc)
+
+	// Attempting to add a DocumentType to an Element should panic
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("Expected panic when adding DocumentType to Element")
+		}
+	}()
+	element.AppendChild(doctype) // Should panic
+}
+
+// TestCircularReferenceValidation tests that circular references are prevented
+func TestCircularReferenceValidation(t *testing.T) {
+	doc := NewDocument()
+	parent := NewElement("div", doc)
+	child := NewElement("span", doc)
+	grandchild := NewElement("p", doc)
+
+	parent.AppendChild(child)
+	child.AppendChild(grandchild)
+
+	// Attempting to make grandchild a parent of parent should panic (circular reference)
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("Expected panic when creating circular reference")
+		}
+	}()
+	grandchild.AppendChild(parent) // Should panic
+}
+
+// TestValidDocumentStructure tests a valid document structure according to DOM spec
+func TestValidDocumentStructure(t *testing.T) {
+	doc := NewDocument()
+
+	// Valid document structure: comments, doctype, comments, element, comments
+	comment1 := NewComment("Start comment", doc)
+	doctype := NewDocumentType("html", "", "", doc)
+	comment2 := NewComment("Middle comment", doc)
+	html := NewElement("html", doc)
+	comment3 := NewComment("End comment", doc)
+
+	// All of these should succeed
+	doc.AppendChild(comment1)
+	doc.AppendChild(doctype)
+	doc.AppendChild(comment2)
+	doc.AppendChild(html)
+	doc.AppendChild(comment3)
+
+	// Verify structure
+	children := doc.ChildNodes()
+	if len(children) != 5 {
+		t.Errorf("Expected Document to have 5 children, got %d", len(children))
+	}
+
+	if children[0].NodeType() != CommentNode {
+		t.Errorf("Expected first child to be Comment, got %v", children[0].NodeType())
+	}
+	if children[1].NodeType() != DocumentTypeNode {
+		t.Errorf("Expected second child to be DocumentType, got %v", children[1].NodeType())
+	}
+	if children[2].NodeType() != CommentNode {
+		t.Errorf("Expected third child to be Comment, got %v", children[2].NodeType())
+	}
+	if children[3].NodeType() != ElementNode {
+		t.Errorf("Expected fourth child to be Element, got %v", children[3].NodeType())
+	}
+	if children[4].NodeType() != CommentNode {
+		t.Errorf("Expected fifth child to be Comment, got %v", children[4].NodeType())
+	}
+}
+
 func TestNodeAppendChild(t *testing.T) {
 	doc := NewDocument()
 	parent := NewElement("div", doc)
