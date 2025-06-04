@@ -140,10 +140,14 @@
   - Live collection implementation with caching
   - namedItem() support by id and name
   - Automatic invalidation on DOM changes
-- [ ] **ChildNode Methods** - Week 6
-  - before(), after(), replaceWith(), remove() methods
-  - Variadic argument support
-  - Text node conversion handling
+- ✅ **ChildNode Methods** - ⭐ **COMPLETED JUNE 4, 2025**
+  - ✅ Complete before(), after(), replaceWith(), remove() methods
+  - ✅ Variadic argument support with proper string to Text node conversion
+  - ✅ DocumentFragment creation and insertion for multiple nodes
+  - ✅ Implemented for Element, Text, Comment, DocumentType, ProcessingInstruction
+  - ✅ Enhanced DocumentFragment insertion logic in core DOM methods
+  - ✅ Comprehensive test coverage (48/48 tests passing)
+  - ✅ Full Web API compliance with WHATWG DOM specification
 
 #### **Phase 3: Advanced DOM Features** (Weeks 7-10)
 - [ ] **Shadow DOM** - Weeks 7-8

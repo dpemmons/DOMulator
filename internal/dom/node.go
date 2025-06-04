@@ -1,6 +1,8 @@
 package dom
 
 import (
+	"errors"
+
 	"github.com/dop251/goja"
 )
 
@@ -251,6 +253,19 @@ func (n *nodeImpl) AppendChild(child Node) Node {
 	if child == nil {
 		return nil
 	}
+
+	// Handle DocumentFragment insertion
+	if child.NodeType() == DocumentFragmentNode {
+		fragment := child
+		// Move all children from the fragment to this node
+		for len(fragment.ChildNodes()) > 0 {
+			fragmentChild := fragment.ChildNodes()[0]
+			fragment.RemoveChild(fragmentChild)
+			n.AppendChild(fragmentChild)
+		}
+		return fragment
+	}
+
 	// If the child already has a parent, remove it from that parent first
 	if child.ParentNode() != nil {
 		child.ParentNode().RemoveChild(child)
@@ -294,6 +309,40 @@ func (n *nodeImpl) InsertBefore(newChild, refChild Node) Node {
 
 	if refChild == nil {
 		return n.AppendChild(newChild)
+	}
+
+	// Handle DocumentFragment insertion
+	if newChild.NodeType() == DocumentFragmentNode {
+		fragment := newChild
+		// Find the position of refChild
+		refIndex := -1
+		for i, c := range n.childNodes {
+			if c == refChild {
+				refIndex = i
+				break
+			}
+		}
+
+		if refIndex == -1 {
+			return nil // refChild not found
+		}
+
+		// Insert all children from the fragment before refChild
+		for len(fragment.ChildNodes()) > 0 {
+			fragmentChild := fragment.ChildNodes()[0]
+			fragment.RemoveChild(fragmentChild)
+			n.childNodes = append(n.childNodes[:refIndex], append(NodeList{fragmentChild}, n.childNodes[refIndex:]...)...)
+			fragmentChild.setParent(n.self)
+			fragmentChild.setOwnerDocument(n.ownerDocument)
+			refIndex++ // Increment position for next insertion
+		}
+
+		// Increment modification time
+		if n.ownerDocument != nil {
+			n.ownerDocument.incrementModificationTime()
+		}
+
+		return fragment
 	}
 
 	// Special case: if newChild is already a child of this parent, we need to move it
@@ -354,6 +403,45 @@ func (n *nodeImpl) InsertBefore(newChild, refChild Node) Node {
 func (n *nodeImpl) ReplaceChild(newChild, oldChild Node) Node {
 	if newChild == nil || oldChild == nil {
 		return nil
+	}
+
+	// Handle DocumentFragment replacement
+	if newChild.NodeType() == DocumentFragmentNode {
+		fragment := newChild
+		// Find the position of oldChild
+		oldIndex := -1
+		for i, c := range n.childNodes {
+			if c == oldChild {
+				oldIndex = i
+				break
+			}
+		}
+
+		if oldIndex == -1 {
+			return nil // oldChild not found
+		}
+
+		// Remove the old child first
+		n.childNodes = append(n.childNodes[:oldIndex], n.childNodes[oldIndex+1:]...)
+		oldChild.setParent(nil)
+
+		// Insert all children from the fragment at the old position
+		insertIndex := oldIndex
+		for len(fragment.ChildNodes()) > 0 {
+			fragmentChild := fragment.ChildNodes()[0]
+			fragment.RemoveChild(fragmentChild)
+			n.childNodes = append(n.childNodes[:insertIndex], append(NodeList{fragmentChild}, n.childNodes[insertIndex:]...)...)
+			fragmentChild.setParent(n.self)
+			fragmentChild.setOwnerDocument(n.ownerDocument)
+			insertIndex++ // Increment position for next insertion
+		}
+
+		// Increment modification time
+		if n.ownerDocument != nil {
+			n.ownerDocument.incrementModificationTime()
+		}
+
+		return oldChild
 	}
 
 	// Special case: if newChild is already a child of this parent, we need to handle it carefully
@@ -479,4 +567,151 @@ func Traverse(n Node, visit func(Node) bool) {
 	for _, child := range n.ChildNodes() {
 		Traverse(child, visit)
 	}
+}
+
+// ChildNode represents the ChildNode mixin as defined in the WHATWG DOM specification.
+// This interface provides convenience methods for manipulating child nodes.
+type ChildNode interface {
+	Before(nodes ...interface{}) error
+	After(nodes ...interface{}) error
+	ReplaceWith(nodes ...interface{}) error
+	Remove() error
+}
+
+// convertNodesToNode implements the "converting nodes into a node" algorithm from the WHATWG DOM spec.
+// This function takes a slice of Node or string values and converts them into a single Node.
+func convertNodesToNode(nodes []interface{}, doc *Document) (Node, error) {
+	if len(nodes) == 0 {
+		return nil, nil
+	}
+
+	var convertedNodes []Node
+
+	// Convert strings to Text nodes and validate Node types
+	for _, node := range nodes {
+		switch v := node.(type) {
+		case Node:
+			convertedNodes = append(convertedNodes, v)
+		case string:
+			textNode := NewText(v, doc)
+			convertedNodes = append(convertedNodes, textNode)
+		default:
+			return nil, errors.New("invalid node type: expected Node or string")
+		}
+	}
+
+	// If only one node, return it directly
+	if len(convertedNodes) == 1 {
+		return convertedNodes[0], nil
+	}
+
+	// If multiple nodes, create a DocumentFragment to contain them
+	fragment := NewDocumentFragment(doc)
+	for _, node := range convertedNodes {
+		fragment.AppendChild(node)
+	}
+
+	return fragment, nil
+}
+
+// findViablePreviousSibling finds the first preceding sibling that is not in the excludeNodes list.
+// This implements the viable sibling logic from the WHATWG DOM specification.
+func findViablePreviousSibling(node Node, excludeNodes []Node) Node {
+	if node.ParentNode() == nil {
+		return nil
+	}
+
+	// Create a map for faster lookup of excluded nodes
+	excluded := make(map[Node]bool)
+	for _, n := range excludeNodes {
+		excluded[n] = true
+	}
+
+	// Find the node's position and search backwards for a viable sibling
+	siblings := node.ParentNode().ChildNodes()
+	for i, sibling := range siblings {
+		if sibling == node {
+			// Search backwards from this position
+			for j := i - 1; j >= 0; j-- {
+				if !excluded[siblings[j]] {
+					return siblings[j]
+				}
+			}
+			break
+		}
+	}
+
+	return nil
+}
+
+// findViableNextSibling finds the first following sibling that is not in the excludeNodes list.
+// This implements the viable sibling logic from the WHATWG DOM specification.
+func findViableNextSibling(node Node, excludeNodes []Node) Node {
+	if node.ParentNode() == nil {
+		return nil
+	}
+
+	// Create a map for faster lookup of excluded nodes
+	excluded := make(map[Node]bool)
+	for _, n := range excludeNodes {
+		excluded[n] = true
+	}
+
+	// Find the node's position and search forwards for a viable sibling
+	siblings := node.ParentNode().ChildNodes()
+	for i, sibling := range siblings {
+		if sibling == node {
+			// Search forwards from this position
+			for j := i + 1; j < len(siblings); j++ {
+				if !excluded[siblings[j]] {
+					return siblings[j]
+				}
+			}
+			break
+		}
+	}
+
+	return nil
+}
+
+// preInsert is a helper function that implements the pre-insert algorithm.
+// This is used by the ChildNode methods to safely insert nodes.
+func preInsert(node, parent, child Node) error {
+	if parent == nil {
+		return errors.New("parent is null")
+	}
+
+	// Validate that the node can be inserted
+	if !canInsertNode(node, parent) {
+		return errors.New("node cannot be inserted at the specified point in the hierarchy")
+	}
+
+	// Insert the node
+	if child == nil {
+		parent.AppendChild(node)
+	} else {
+		parent.InsertBefore(node, child)
+	}
+
+	return nil
+}
+
+// canInsertNode checks if a node can be legally inserted as a child of the given parent.
+// This implements basic hierarchy validation rules.
+func canInsertNode(node, parent Node) bool {
+	if node == nil || parent == nil {
+		return false
+	}
+
+	// Check for circular references (node cannot be an ancestor of parent)
+	current := parent
+	for current != nil {
+		if current == node {
+			return false
+		}
+		current = current.ParentNode()
+	}
+
+	// Additional type-based validation can be added here
+	return true
 }

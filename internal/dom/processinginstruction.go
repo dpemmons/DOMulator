@@ -36,3 +36,96 @@ func (pi *ProcessingInstruction) toJS(vm *goja.Runtime) goja.Value {
 	// This will be implemented later when integrating with Goja
 	return vm.ToValue(nil)
 }
+
+// ChildNode mixin methods
+
+// Before inserts nodes just before this processing instruction node in its parent's children list.
+func (pi *ProcessingInstruction) Before(nodes ...interface{}) error {
+	parent := pi.ParentNode()
+	if parent == nil {
+		return nil // No parent, nothing to do
+	}
+
+	// Convert nodes to a single node or document fragment
+	convertedNode, err := convertNodesToNode(nodes, pi.ownerDocument)
+	if err != nil {
+		return err
+	}
+
+	if convertedNode == nil {
+		return nil // Nothing to insert
+	}
+
+	// Insert before this processing instruction node
+	parent.InsertBefore(convertedNode, pi)
+	return nil
+}
+
+// After inserts nodes just after this processing instruction node in its parent's children list.
+func (pi *ProcessingInstruction) After(nodes ...interface{}) error {
+	parent := pi.ParentNode()
+	if parent == nil {
+		return nil // No parent, nothing to do
+	}
+
+	// Convert nodes to a single node or document fragment
+	convertedNode, err := convertNodesToNode(nodes, pi.ownerDocument)
+	if err != nil {
+		return err
+	}
+
+	if convertedNode == nil {
+		return nil // Nothing to insert
+	}
+
+	// Find the next viable sibling (not in the nodes being inserted)
+	var excludeNodes []Node
+	if fragment, ok := convertedNode.(*DocumentFragment); ok {
+		excludeNodes = fragment.ChildNodes()
+	} else {
+		excludeNodes = []Node{convertedNode}
+	}
+
+	nextSibling := findViableNextSibling(pi, excludeNodes)
+	if nextSibling != nil {
+		parent.InsertBefore(convertedNode, nextSibling)
+	} else {
+		parent.AppendChild(convertedNode)
+	}
+	return nil
+}
+
+// ReplaceWith replaces this processing instruction node with the given nodes.
+func (pi *ProcessingInstruction) ReplaceWith(nodes ...interface{}) error {
+	parent := pi.ParentNode()
+	if parent == nil {
+		return nil // No parent, nothing to do
+	}
+
+	// Convert nodes to a single node or document fragment
+	convertedNode, err := convertNodesToNode(nodes, pi.ownerDocument)
+	if err != nil {
+		return err
+	}
+
+	if convertedNode == nil {
+		// Just remove this processing instruction node
+		parent.RemoveChild(pi)
+		return nil
+	}
+
+	// Replace this processing instruction node with the converted node
+	parent.ReplaceChild(convertedNode, pi)
+	return nil
+}
+
+// Remove removes this processing instruction node from its parent.
+func (pi *ProcessingInstruction) Remove() error {
+	parent := pi.ParentNode()
+	if parent == nil {
+		return nil // No parent, nothing to do
+	}
+
+	parent.RemoveChild(pi)
+	return nil
+}

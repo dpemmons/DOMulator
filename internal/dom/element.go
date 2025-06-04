@@ -610,3 +610,96 @@ func (e *Element) toJS(vm *goja.Runtime) goja.Value {
 	// This will be implemented later when integrating with Goja
 	return vm.ToValue(nil)
 }
+
+// ChildNode mixin methods
+
+// Before inserts nodes just before this element in its parent's children list.
+func (e *Element) Before(nodes ...interface{}) error {
+	parent := e.ParentNode()
+	if parent == nil {
+		return nil // No parent, nothing to do
+	}
+
+	// Convert nodes to a single node or document fragment
+	convertedNode, err := convertNodesToNode(nodes, e.ownerDocument)
+	if err != nil {
+		return err
+	}
+
+	if convertedNode == nil {
+		return nil // Nothing to insert
+	}
+
+	// Insert before this element
+	parent.InsertBefore(convertedNode, e)
+	return nil
+}
+
+// After inserts nodes just after this element in its parent's children list.
+func (e *Element) After(nodes ...interface{}) error {
+	parent := e.ParentNode()
+	if parent == nil {
+		return nil // No parent, nothing to do
+	}
+
+	// Convert nodes to a single node or document fragment
+	convertedNode, err := convertNodesToNode(nodes, e.ownerDocument)
+	if err != nil {
+		return err
+	}
+
+	if convertedNode == nil {
+		return nil // Nothing to insert
+	}
+
+	// Find the next viable sibling (not in the nodes being inserted)
+	var excludeNodes []Node
+	if fragment, ok := convertedNode.(*DocumentFragment); ok {
+		excludeNodes = fragment.ChildNodes()
+	} else {
+		excludeNodes = []Node{convertedNode}
+	}
+
+	nextSibling := findViableNextSibling(e, excludeNodes)
+	if nextSibling != nil {
+		parent.InsertBefore(convertedNode, nextSibling)
+	} else {
+		parent.AppendChild(convertedNode)
+	}
+	return nil
+}
+
+// ReplaceWith replaces this element with the given nodes.
+func (e *Element) ReplaceWith(nodes ...interface{}) error {
+	parent := e.ParentNode()
+	if parent == nil {
+		return nil // No parent, nothing to do
+	}
+
+	// Convert nodes to a single node or document fragment
+	convertedNode, err := convertNodesToNode(nodes, e.ownerDocument)
+	if err != nil {
+		return err
+	}
+
+	if convertedNode == nil {
+		// Just remove this element
+		parent.RemoveChild(e)
+		return nil
+	}
+
+	// Replace this element with the converted node
+	parent.ReplaceChild(convertedNode, e)
+	return nil
+}
+
+// Remove removes this element from its parent.
+func (e *Element) Remove() error {
+	parent := e.ParentNode()
+	if parent == nil {
+		return nil // No parent, nothing to do
+	}
+
+	parent.RemoveChild(e)
+	return nil
+}

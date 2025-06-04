@@ -187,3 +187,96 @@ func (t *Text) toJS(vm *goja.Runtime) goja.Value {
 	// This will be implemented later when integrating with Goja
 	return vm.ToValue(nil)
 }
+
+// ChildNode mixin methods
+
+// Before inserts nodes just before this text node in its parent's children list.
+func (t *Text) Before(nodes ...interface{}) error {
+	parent := t.ParentNode()
+	if parent == nil {
+		return nil // No parent, nothing to do
+	}
+
+	// Convert nodes to a single node or document fragment
+	convertedNode, err := convertNodesToNode(nodes, t.ownerDocument)
+	if err != nil {
+		return err
+	}
+
+	if convertedNode == nil {
+		return nil // Nothing to insert
+	}
+
+	// Insert before this text node
+	parent.InsertBefore(convertedNode, t)
+	return nil
+}
+
+// After inserts nodes just after this text node in its parent's children list.
+func (t *Text) After(nodes ...interface{}) error {
+	parent := t.ParentNode()
+	if parent == nil {
+		return nil // No parent, nothing to do
+	}
+
+	// Convert nodes to a single node or document fragment
+	convertedNode, err := convertNodesToNode(nodes, t.ownerDocument)
+	if err != nil {
+		return err
+	}
+
+	if convertedNode == nil {
+		return nil // Nothing to insert
+	}
+
+	// Find the next viable sibling (not in the nodes being inserted)
+	var excludeNodes []Node
+	if fragment, ok := convertedNode.(*DocumentFragment); ok {
+		excludeNodes = fragment.ChildNodes()
+	} else {
+		excludeNodes = []Node{convertedNode}
+	}
+
+	nextSibling := findViableNextSibling(t, excludeNodes)
+	if nextSibling != nil {
+		parent.InsertBefore(convertedNode, nextSibling)
+	} else {
+		parent.AppendChild(convertedNode)
+	}
+	return nil
+}
+
+// ReplaceWith replaces this text node with the given nodes.
+func (t *Text) ReplaceWith(nodes ...interface{}) error {
+	parent := t.ParentNode()
+	if parent == nil {
+		return nil // No parent, nothing to do
+	}
+
+	// Convert nodes to a single node or document fragment
+	convertedNode, err := convertNodesToNode(nodes, t.ownerDocument)
+	if err != nil {
+		return err
+	}
+
+	if convertedNode == nil {
+		// Just remove this text node
+		parent.RemoveChild(t)
+		return nil
+	}
+
+	// Replace this text node with the converted node
+	parent.ReplaceChild(convertedNode, t)
+	return nil
+}
+
+// Remove removes this text node from its parent.
+func (t *Text) Remove() error {
+	parent := t.ParentNode()
+	if parent == nil {
+		return nil // No parent, nothing to do
+	}
+
+	parent.RemoveChild(t)
+	return nil
+}

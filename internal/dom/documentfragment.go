@@ -18,6 +18,7 @@ func NewDocumentFragment(doc *Document) *DocumentFragment {
 			ownerDocument: doc,
 		},
 	}
+	df.nodeImpl.self = df // Set the self reference
 	return df
 }
 
