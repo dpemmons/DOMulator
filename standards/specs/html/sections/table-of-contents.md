@@ -1,0 +1,25 @@
+## Table of contents {#table-of-contents .no-num .no-toc}
+
+1.  [[1]{.secno} Introduction](#toc-introduction)
+2.  [[2]{.secno} Common infrastructure](#toc-infrastructure)
+3.  [[3]{.secno} Semantics, structure, and APIs of HTML
+    documents](#toc-dom)
+4.  [[4]{.secno} The elements of HTML](#toc-semantics)
+5.  [[5]{.secno} Microdata](#toc-microdata)
+6.  [[6]{.secno} User interaction](#toc-editing)
+7.  [[7]{.secno} Loading web pages](#toc-browsers)
+8.  [[8]{.secno} Web application APIs](#toc-webappapis)
+9.  [[9]{.secno} Communication](#toc-comms)
+10. [[10]{.secno} Web workers](#toc-workers)
+11. [[11]{.secno} Worklets](#toc-worklets)
+12. [[12]{.secno} Web storage](#toc-webstorage)
+13. [[13]{.secno} The HTML syntax](#toc-syntax)
+14. [[14]{.secno} The XML syntax](#toc-the-xhtml-syntax)
+15. [[15]{.secno} Rendering](#toc-rendering)
+16. [[16]{.secno} Obsolete features](#toc-obsolete)
+17. [[17]{.secno} IANA considerations](#toc-iana)
+18. [Index](#toc-index)
+19. [References](#toc-references)
+20. [Acknowledgments](#toc-acknowledgments)
+21. [Intellectual property rights](#toc-ipr)
+
