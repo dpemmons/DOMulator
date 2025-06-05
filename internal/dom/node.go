@@ -302,54 +302,18 @@ func (n *nodeImpl) AppendChild(child Node) Node {
 		panic(NewNotFoundError("child cannot be null"))
 	}
 
-	// Validate hierarchy constraints
-	if err := n.validateHierarchy(child); err != nil {
+	// Use the spec-compliant pre-insert algorithm
+	result, err := preInsert(child, n.self, nil)
+	if err != nil {
 		panic(err)
 	}
 
-	// Handle DocumentFragment insertion
-	if child.NodeType() == DocumentFragmentNode {
-		fragment := child
-		// Collect all fragment children first (since removing them modifies the live NodeList)
-		fragmentChildren := fragment.ChildNodes()
-		var childrenToMove []Node
-		for i := 0; i < fragmentChildren.Length(); i++ {
-			childrenToMove = append(childrenToMove, fragmentChildren.Item(i))
-		}
-
-		// Move all children from the fragment to this node
-		for _, fragmentChild := range childrenToMove {
-			// Remove from fragment first
-			fragment.RemoveChild(fragmentChild)
-
-			// Add directly to this node without calling AppendChild (to avoid recursion)
-			n.childNodes = append(n.childNodes, fragmentChild)
-			fragmentChild.setParent(n.self)
-			fragmentChild.setOwnerDocument(n.ownerDocument)
-		}
-
-		// Increment modification time
-		if n.ownerDocument != nil {
-			n.ownerDocument.incrementModificationTime()
-		}
-
-		return fragment
-	}
-
-	// If the child already has a parent, remove it from that parent first
-	if child.ParentNode() != nil {
-		child.ParentNode().RemoveChild(child)
-	}
-	n.childNodes = append(n.childNodes, child)
-	child.setParent(n.self)
-	child.setOwnerDocument(n.ownerDocument)
-
-	// Increment modification time
+	// Increment modification time for backward compatibility
 	if n.ownerDocument != nil {
 		n.ownerDocument.incrementModificationTime()
 	}
 
-	return child
+	return result
 }
 
 func (n *nodeImpl) RemoveChild(child Node) Node {
@@ -357,27 +321,18 @@ func (n *nodeImpl) RemoveChild(child Node) Node {
 		panic(NewNotFoundError("child cannot be null"))
 	}
 
-	// Check if child is actually a child of this node
-	if child.ParentNode() != n.self {
-		panic(NewNotFoundError("Node is not a child of this parent"))
+	// Use the spec-compliant pre-remove algorithm
+	result, err := preRemove(child, n.self)
+	if err != nil {
+		panic(err)
 	}
 
-	for i, c := range n.childNodes {
-		if c == child {
-			n.childNodes = append(n.childNodes[:i], n.childNodes[i+1:]...)
-			child.setParent(nil)
-
-			// Increment modification time
-			if n.ownerDocument != nil {
-				n.ownerDocument.incrementModificationTime()
-			}
-
-			return child
-		}
+	// Increment modification time for backward compatibility
+	if n.ownerDocument != nil {
+		n.ownerDocument.incrementModificationTime()
 	}
 
-	// This should never happen given the parent check above, but just in case
-	panic(NewNotFoundError("Child not found in parent's child list"))
+	return result
 }
 
 func (n *nodeImpl) InsertBefore(newChild, refChild Node) Node {
@@ -1187,79 +1142,645 @@ func (n *nodeImpl) Normalize() {
 	}
 }
 
-// validateHierarchy implements the DOM hierarchy validation rules
-func (n *nodeImpl) validateHierarchy(child Node) *DOMException {
-	return n.validateHierarchyWithExclusion(child, nil)
-}
+// WHATWG DOM Section 4.2.3 Mutation algorithms
 
-// validateHierarchyWithExclusion validates hierarchy but excludes a specific node from uniqueness checks
-// This is used during replacement operations where the old node is being replaced
-func (n *nodeImpl) validateHierarchyWithExclusion(child Node, excludeNode Node) *DOMException {
-	// Check for circular references (child cannot be an ancestor of n.self)
-	current := n.self
+// ensureReplaceValidity implements validation for "replace a child with node within a parent"
+// This is similar to ensurePreInsertValidity but excludes the child being replaced from uniqueness checks
+func ensureReplaceValidity(node, parent, oldChild Node) *DOMException {
+	// 1. If parent is not a Document, DocumentFragment, or Element node, then throw a "HierarchyRequestError" DOMException.
+	parentType := parent.NodeType()
+	if parentType != DocumentNode && parentType != DocumentFragmentNode && parentType != ElementNode {
+		return NewHierarchyRequestError("Parent is not a Document, DocumentFragment, or Element node")
+	}
+
+	// 2. If node is a host-including inclusive ancestor of parent, then throw a "HierarchyRequestError" DOMException.
+	current := parent
 	for current != nil {
-		if current == child {
-			return NewHierarchyRequestError("Cannot insert a node as a child of itself or its ancestors")
+		if current == node {
+			return NewHierarchyRequestError("Node is a host-including inclusive ancestor of parent")
 		}
 		current = current.ParentNode()
 	}
 
-	// Check node type compatibility based on WHATWG DOM specification
-	parentType := n.nodeType
-	childType := child.NodeType()
+	// 3. If child's parent is not parent, then throw a "NotFoundError" DOMException.
+	if oldChild.ParentNode() != parent {
+		return NewNotFoundError("Child's parent is not the specified parent")
+	}
 
-	switch parentType {
-	case DocumentNode:
-		// Document can only have one Element, one DocumentType, and PIs/Comments
-		switch childType {
+	// 4. If node is not a DocumentFragment, DocumentType, Element, or CharacterData node, then throw a "HierarchyRequestError" DOMException.
+	nodeType := node.NodeType()
+	if nodeType != DocumentFragmentNode && nodeType != DocumentTypeNode && nodeType != ElementNode &&
+		nodeType != TextNode && nodeType != CommentNode && nodeType != ProcessingInstructionNode && nodeType != CDataSectionNode {
+		return NewHierarchyRequestError("Node is not a DocumentFragment, DocumentType, Element, or CharacterData node")
+	}
+
+	// 5. If either node is a Text node and parent is a document, or node is a doctype and parent is not a document, then throw a "HierarchyRequestError" DOMException.
+	if (nodeType == TextNode && parentType == DocumentNode) ||
+		(nodeType == DocumentTypeNode && parentType != DocumentNode) {
+		return NewHierarchyRequestError("Invalid node type for this parent")
+	}
+
+	// 6. If parent is a document, and any of the statements below, switched on the interface node implements, are true, then throw a "HierarchyRequestError" DOMException.
+	if parentType == DocumentNode {
+		switch nodeType {
+		case DocumentFragmentNode:
+			// If node has more than one element child or has a Text node child.
+			elementCount := 0
+			hasTextChild := false
+			fragmentChildren := node.ChildNodes()
+			for i := 0; i < fragmentChildren.Length(); i++ {
+				childType := fragmentChildren.Item(i).NodeType()
+				if childType == ElementNode {
+					elementCount++
+				} else if childType == TextNode {
+					hasTextChild = true
+				}
+			}
+			if elementCount > 1 || hasTextChild {
+				return NewHierarchyRequestError("DocumentFragment has more than one element child or has a Text node child")
+			}
+
+			// Otherwise, if node has one element child and either parent has an element child that is not child or a doctype is following child.
+			if elementCount == 1 {
+				// Check if parent has an element child that is not the old child being replaced
+				parentChildren := parent.ChildNodes()
+				for i := 0; i < parentChildren.Length(); i++ {
+					child := parentChildren.Item(i)
+					if child.NodeType() == ElementNode && child != oldChild {
+						return NewHierarchyRequestError("Parent has an element child that is not the child being replaced")
+					}
+				}
+
+				// Check if a doctype is following oldChild
+				nextSibling := oldChild.NextSibling()
+				for nextSibling != nil {
+					if nextSibling.NodeType() == DocumentTypeNode {
+						return NewHierarchyRequestError("A doctype is following child")
+					}
+					nextSibling = nextSibling.NextSibling()
+				}
+			}
+
 		case ElementNode:
-			// Check if Document already has an element child (excluding the node being replaced)
-			for _, existing := range n.childNodes {
-				if existing.NodeType() == ElementNode && existing != excludeNode {
-					return NewHierarchyRequestError("Document can only have one Element child")
+			// parent has an element child that is not child or a doctype is following child.
+			parentChildren := parent.ChildNodes()
+			for i := 0; i < parentChildren.Length(); i++ {
+				child := parentChildren.Item(i)
+				if child.NodeType() == ElementNode && child != oldChild {
+					return NewHierarchyRequestError("Parent has an element child that is not the child being replaced")
 				}
 			}
+
+			nextSibling := oldChild.NextSibling()
+			for nextSibling != nil {
+				if nextSibling.NodeType() == DocumentTypeNode {
+					return NewHierarchyRequestError("A doctype is following child")
+				}
+				nextSibling = nextSibling.NextSibling()
+			}
+
 		case DocumentTypeNode:
-			// Check if Document already has a doctype child (excluding the node being replaced)
-			for _, existing := range n.childNodes {
-				if existing.NodeType() == DocumentTypeNode && existing != excludeNode {
-					return NewHierarchyRequestError("Document can only have one DocumentType child")
+			// parent has a doctype child that is not child, or an element is preceding child.
+			parentChildren := parent.ChildNodes()
+			for i := 0; i < parentChildren.Length(); i++ {
+				child := parentChildren.Item(i)
+				if child.NodeType() == DocumentTypeNode && child != oldChild {
+					return NewHierarchyRequestError("Parent has a doctype child that is not the child being replaced")
 				}
 			}
-		case ProcessingInstructionNode, CommentNode:
-			// These are allowed
-		case DocumentFragmentNode:
-			// Fragment contents will be validated individually
-		default:
-			return NewHierarchyRequestError("Document cannot contain this node type")
+
+			prevSibling := oldChild.PreviousSibling()
+			for prevSibling != nil {
+				if prevSibling.NodeType() == ElementNode {
+					return NewHierarchyRequestError("An element is preceding child")
+				}
+				prevSibling = prevSibling.PreviousSibling()
+			}
 		}
-
-	case DocumentTypeNode, TextNode, CDataSectionNode, ProcessingInstructionNode, CommentNode:
-		// These node types cannot have children
-		return NewHierarchyRequestError("This node type cannot have children")
-
-	case ElementNode, DocumentFragmentNode:
-		// Elements and DocumentFragments can contain Elements, Text, CData, PI, Comments
-		switch childType {
-		case ElementNode, TextNode, CDataSectionNode, ProcessingInstructionNode, CommentNode:
-			// These are allowed
-		case DocumentFragmentNode:
-			// Fragment contents will be validated individually
-		case DocumentNode, DocumentTypeNode:
-			return NewHierarchyRequestError("Elements cannot contain Document or DocumentType nodes")
-		default:
-			return NewHierarchyRequestError("Elements cannot contain this node type")
-		}
-
-	case AttributeNode:
-		// Attributes cannot have children
-		return NewHierarchyRequestError("Attribute nodes cannot have children")
-
-	default:
-		return NewHierarchyRequestError("Unknown node type cannot have children")
 	}
 
 	return nil
+}
+
+// ensurePreInsertValidity implements the "ensure pre-insert validity" algorithm
+// from WHATWG DOM Section 4.2.3
+func ensurePreInsertValidity(node, parent, child Node) *DOMException {
+	// 1. If parent is not a Document, DocumentFragment, or Element node, then throw a "HierarchyRequestError" DOMException.
+	parentType := parent.NodeType()
+	if parentType != DocumentNode && parentType != DocumentFragmentNode && parentType != ElementNode {
+		return NewHierarchyRequestError("Parent is not a Document, DocumentFragment, or Element node")
+	}
+
+	// 2. If node is a host-including inclusive ancestor of parent, then throw a "HierarchyRequestError" DOMException.
+	current := parent
+	for current != nil {
+		if current == node {
+			return NewHierarchyRequestError("Node is a host-including inclusive ancestor of parent")
+		}
+		current = current.ParentNode()
+		// TODO: Add shadow DOM ancestor checking when shadow DOM is fully implemented
+	}
+
+	// 3. If child is non-null and its parent is not parent, then throw a "NotFoundError" DOMException.
+	if child != nil && child.ParentNode() != parent {
+		return NewNotFoundError("Child's parent is not the specified parent")
+	}
+
+	// 4. If node is not a DocumentFragment, DocumentType, Element, or CharacterData node, then throw a "HierarchyRequestError" DOMException.
+	nodeType := node.NodeType()
+	if nodeType != DocumentFragmentNode && nodeType != DocumentTypeNode && nodeType != ElementNode &&
+		nodeType != TextNode && nodeType != CommentNode && nodeType != ProcessingInstructionNode && nodeType != CDataSectionNode {
+		return NewHierarchyRequestError("Node is not a DocumentFragment, DocumentType, Element, or CharacterData node")
+	}
+
+	// 5. If either node is a Text node and parent is a document, or node is a doctype and parent is not a document, then throw a "HierarchyRequestError" DOMException.
+	if (nodeType == TextNode && parentType == DocumentNode) ||
+		(nodeType == DocumentTypeNode && parentType != DocumentNode) {
+		return NewHierarchyRequestError("Invalid node type for this parent")
+	}
+
+	// 6. If parent is a document, and any of the statements below, switched on the interface node implements, are true, then throw a "HierarchyRequestError" DOMException.
+	if parentType == DocumentNode {
+		switch nodeType {
+		case DocumentFragmentNode:
+			// If node has more than one element child or has a Text node child.
+			elementCount := 0
+			hasTextChild := false
+			fragmentChildren := node.ChildNodes()
+			for i := 0; i < fragmentChildren.Length(); i++ {
+				childType := fragmentChildren.Item(i).NodeType()
+				if childType == ElementNode {
+					elementCount++
+				} else if childType == TextNode {
+					hasTextChild = true
+				}
+			}
+			if elementCount > 1 || hasTextChild {
+				return NewHierarchyRequestError("DocumentFragment has more than one element child or has a Text node child")
+			}
+
+			// Otherwise, if node has one element child and either parent has an element child, child is a doctype, or child is non-null and a doctype is following child.
+			if elementCount == 1 {
+				// Check if parent has an element child
+				parentChildren := parent.ChildNodes()
+				for i := 0; i < parentChildren.Length(); i++ {
+					if parentChildren.Item(i).NodeType() == ElementNode {
+						return NewHierarchyRequestError("Parent already has an element child")
+					}
+				}
+
+				// Check if child is a doctype
+				if child != nil && child.NodeType() == DocumentTypeNode {
+					return NewHierarchyRequestError("Child is a doctype")
+				}
+
+				// Check if child is non-null and a doctype is following child
+				if child != nil {
+					nextSibling := child.NextSibling()
+					for nextSibling != nil {
+						if nextSibling.NodeType() == DocumentTypeNode {
+							return NewHierarchyRequestError("A doctype is following child")
+						}
+						nextSibling = nextSibling.NextSibling()
+					}
+				}
+			}
+
+		case ElementNode:
+			// parent has an element child, child is a doctype, or child is non-null and a doctype is following child.
+			parentChildren := parent.ChildNodes()
+			for i := 0; i < parentChildren.Length(); i++ {
+				if parentChildren.Item(i).NodeType() == ElementNode {
+					return NewHierarchyRequestError("Parent already has an element child")
+				}
+			}
+
+			if child != nil && child.NodeType() == DocumentTypeNode {
+				return NewHierarchyRequestError("Child is a doctype")
+			}
+
+			if child != nil {
+				nextSibling := child.NextSibling()
+				for nextSibling != nil {
+					if nextSibling.NodeType() == DocumentTypeNode {
+						return NewHierarchyRequestError("A doctype is following child")
+					}
+					nextSibling = nextSibling.NextSibling()
+				}
+			}
+
+		case DocumentTypeNode:
+			// parent has a doctype child, child is non-null and an element is preceding child, or child is null and parent has an element child.
+			parentChildren := parent.ChildNodes()
+			for i := 0; i < parentChildren.Length(); i++ {
+				if parentChildren.Item(i).NodeType() == DocumentTypeNode {
+					return NewHierarchyRequestError("Parent already has a doctype child")
+				}
+			}
+
+			if child != nil {
+				prevSibling := child.PreviousSibling()
+				for prevSibling != nil {
+					if prevSibling.NodeType() == ElementNode {
+						return NewHierarchyRequestError("An element is preceding child")
+					}
+					prevSibling = prevSibling.PreviousSibling()
+				}
+			} else {
+				// child is null, check if parent has an element child
+				for i := 0; i < parentChildren.Length(); i++ {
+					if parentChildren.Item(i).NodeType() == ElementNode {
+						return NewHierarchyRequestError("Parent has an element child and child is null")
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// preInsert implements the "pre-insert" algorithm from WHATWG DOM Section 4.2.3
+func preInsert(node, parent, child Node) (Node, *DOMException) {
+	// 1. Ensure pre-insert validity of node into parent before child.
+	if err := ensurePreInsertValidity(node, parent, child); err != nil {
+		return nil, err
+	}
+
+	// 2. Let referenceChild be child.
+	referenceChild := child
+
+	// 3. If referenceChild is node, then set referenceChild to node's next sibling.
+	if referenceChild == node {
+		referenceChild = node.NextSibling()
+	}
+
+	// 4. Insert node into parent before referenceChild.
+	insertNode(node, parent, referenceChild, false)
+
+	// 5. Return node.
+	return node, nil
+}
+
+// insertNode implements the "insert" algorithm from WHATWG DOM Section 4.2.3
+func insertNode(node, parent, child Node, suppressObservers bool) {
+	// 1. Let nodes be node's children, if node is a DocumentFragment node; otherwise « node ».
+	var nodes []Node
+	if node.NodeType() == DocumentFragmentNode {
+		children := node.ChildNodes()
+		for i := 0; i < children.Length(); i++ {
+			nodes = append(nodes, children.Item(i))
+		}
+	} else {
+		nodes = []Node{node}
+	}
+
+	// 2. Let count be nodes's size.
+	count := len(nodes)
+
+	// 3. If count is 0, then return.
+	if count == 0 {
+		return
+	}
+
+	// 4. If node is a DocumentFragment node:
+	if node.NodeType() == DocumentFragmentNode {
+		// Remove its children with the suppress observers flag set.
+		// Use direct manipulation to avoid infinite recursion
+		if nodeImpl, ok := node.(*DocumentFragment); ok {
+			// Clear the fragment's children directly
+			nodeImpl.nodeImpl.childNodes = []Node{}
+			// Update parent references for the nodes being moved
+			for _, child := range nodes {
+				child.setParent(nil)
+			}
+		}
+
+		// Queue a tree mutation record for node with « », nodes, null, and null.
+		// (This step intentionally does not pay attention to the suppress observers flag.)
+		queueTreeMutationRecord(node, []Node{}, nodes, nil, nil)
+	}
+
+	// 5. If child is non-null: (range steps - TODO when live ranges are implemented)
+	// For each live range whose start node is parent and start offset is greater than child's index, increase its start offset by count.
+	// For each live range whose end node is parent and end offset is greater than child's index, increase its end offset by count.
+
+	// 6. Let previousSibling be child's previous sibling or parent's last child if child is null.
+	var previousSibling Node
+	if child != nil {
+		previousSibling = child.PreviousSibling()
+	} else {
+		previousSibling = parent.LastChild()
+	}
+
+	// 7. For each node in nodes, in tree order:
+	for _, nodeToInsert := range nodes {
+		// Adopt node into parent's node document.
+		adoptNodeIntoDocument(nodeToInsert, parent.OwnerDocument())
+
+		// If child is null, then append node to parent's children.
+		// Otherwise, insert node into parent's children before child's index.
+		// We need to access the underlying nodeImpl for all node types
+		var parentImpl *nodeImpl
+		switch p := parent.(type) {
+		case *nodeImpl:
+			parentImpl = p
+		case *Document:
+			parentImpl = &p.nodeImpl
+		case *Element:
+			parentImpl = &p.nodeImpl
+		case *DocumentFragment:
+			parentImpl = &p.nodeImpl
+		default:
+			// Fallback - try to get nodeImpl through interface
+			if ni, ok := parent.(interface{ getNodeImpl() *nodeImpl }); ok {
+				parentImpl = ni.getNodeImpl()
+			}
+		}
+
+		if parentImpl != nil {
+			if child == nil {
+				parentImpl.childNodes = append(parentImpl.childNodes, nodeToInsert)
+			} else {
+				// Find child's index and insert before it
+				for i, c := range parentImpl.childNodes {
+					if c == child {
+						parentImpl.childNodes = append(parentImpl.childNodes[:i], append([]Node{nodeToInsert}, parentImpl.childNodes[i:]...)...)
+						break
+					}
+				}
+			}
+		}
+
+		nodeToInsert.setParent(parent)
+
+		// If parent is a shadow host whose shadow root's slot assignment is "named" and node is a slottable, then assign a slot for node.
+		// TODO: Implement when shadow DOM slot assignment is complete
+
+		// If parent's root is a shadow root, and parent is a slot whose assigned nodes is the empty list, then run signal a slot change for parent.
+		// TODO: Implement when shadow DOM is complete
+
+		// Run assign slottables for a tree with node's root.
+		// TODO: Implement when shadow DOM is complete
+
+		// For each shadow-including inclusive descendant inclusiveDescendant of node, in shadow-including tree order:
+		traverseForInsertion(nodeToInsert)
+	}
+
+	// 8. If suppress observers flag is unset, then queue a tree mutation record for parent with nodes, « », previousSibling, and child.
+	if !suppressObservers {
+		queueTreeMutationRecord(parent, nodes, []Node{}, previousSibling, child)
+	}
+
+	// 9. Run the children changed steps for parent.
+	runChildrenChangedSteps(parent)
+
+	// 10-11. Post-connection steps (simplified for now)
+	if !suppressObservers {
+		for _, nodeToInsert := range nodes {
+			runPostConnectionSteps(nodeToInsert)
+		}
+	}
+}
+
+// traverseForInsertion handles the shadow-including tree traversal for insertion
+func traverseForInsertion(node Node) {
+	// Run the insertion steps with node.
+	runInsertionSteps(node)
+
+	// If node is not connected, then continue.
+	if !node.IsConnected() {
+		return
+	}
+
+	// Handle element-specific insertion logic
+	if node.NodeType() == ElementNode {
+		// Custom element logic would go here
+		// For now, we skip this as custom elements aren't fully implemented
+	}
+
+	// Recursively handle children
+	children := node.ChildNodes()
+	for i := 0; i < children.Length(); i++ {
+		traverseForInsertion(children.Item(i))
+	}
+}
+
+// preRemove implements the "pre-remove" algorithm from WHATWG DOM Section 4.2.3
+func preRemove(child, parent Node) (Node, *DOMException) {
+	// 1. If child's parent is not parent, then throw a "NotFoundError" DOMException.
+	if child.ParentNode() != parent {
+		return nil, NewNotFoundError("Child's parent is not the specified parent")
+	}
+
+	// 2. Remove child.
+	removeNode(child, false)
+
+	// 3. Return child.
+	return child, nil
+}
+
+// removeNode implements the "remove" algorithm from WHATWG DOM Section 4.2.3
+func removeNode(node Node, suppressObservers bool) {
+	// 1. Let parent be node's parent.
+	parent := node.ParentNode()
+	if parent == nil {
+		return // Node is already removed
+	}
+
+	// 2. Run the live range pre-remove steps, given node.
+	// TODO: Implement when live ranges are available
+
+	// 3. For each NodeIterator object iterator whose root's node document is node's node document, run the NodeIterator pre-remove steps given node and iterator.
+	// TODO: Implement comprehensive NodeIterator integration
+
+	// 4. Let oldPreviousSibling be node's previous sibling.
+	oldPreviousSibling := node.PreviousSibling()
+
+	// 5. Let oldNextSibling be node's next sibling.
+	oldNextSibling := node.NextSibling()
+
+	// 6. Remove node from its parent's children.
+	// We need to access the underlying nodeImpl for all node types
+	var parentImpl *nodeImpl
+	switch p := parent.(type) {
+	case *nodeImpl:
+		parentImpl = p
+	case *Document:
+		parentImpl = &p.nodeImpl
+	case *Element:
+		parentImpl = &p.nodeImpl
+	case *DocumentFragment:
+		parentImpl = &p.nodeImpl
+	default:
+		// Fallback - try to get nodeImpl through interface
+		if ni, ok := parent.(interface{ getNodeImpl() *nodeImpl }); ok {
+			parentImpl = ni.getNodeImpl()
+		}
+	}
+
+	if parentImpl != nil {
+		for i, child := range parentImpl.childNodes {
+			if child == node {
+				parentImpl.childNodes = append(parentImpl.childNodes[:i], parentImpl.childNodes[i+1:]...)
+				break
+			}
+		}
+	}
+
+	node.setParent(nil)
+
+	// 7. If node is assigned, then run assign slottables for node's assigned slot.
+	// TODO: Implement when shadow DOM slot assignment is complete
+
+	// 8. If parent's root is a shadow root, and parent is a slot whose assigned nodes is empty, then run signal a slot change for parent.
+	// TODO: Implement when shadow DOM is complete
+
+	// 9. If node has an inclusive descendant that is a slot:
+	// TODO: Implement when shadow DOM is complete
+
+	// 10. Run the removing steps with node and parent.
+	runRemovingSteps(node, parent)
+
+	// 11. Let isParentConnected be parent's connected.
+	isParentConnected := parent.IsConnected()
+
+	// 12. If node is custom and isParentConnected is true, then enqueue a custom element callback reaction with node, callback name "disconnectedCallback", and « ».
+	// TODO: Implement when custom elements are available
+
+	// 13. For each shadow-including descendant descendant of node, in shadow-including tree order:
+	traverseForRemoval(node, isParentConnected)
+
+	// 14. For each inclusive ancestor inclusiveAncestor of parent, and then for each registered of inclusiveAncestor's registered observer list, if registered's options["subtree"] is true, then append a new transient registered observer whose observer is registered's observer, options is registered's options, and source is registered to node's registered observer list.
+	// TODO: Implement when mutation observers are fully integrated
+
+	// 15. If suppress observers flag is unset, then queue a tree mutation record for parent with « », « node », oldPreviousSibling, and oldNextSibling.
+	if !suppressObservers {
+		queueTreeMutationRecord(parent, []Node{}, []Node{node}, oldPreviousSibling, oldNextSibling)
+	}
+
+	// 16. Run the children changed steps for parent.
+	runChildrenChangedSteps(parent)
+}
+
+// traverseForRemoval handles the shadow-including tree traversal for removal
+func traverseForRemoval(node Node, isParentConnected bool) {
+	// Run the removing steps with node and null for descendants
+	runRemovingSteps(node, nil)
+
+	// Handle custom element disconnection
+	if node.NodeType() == ElementNode && isParentConnected {
+		// Custom element disconnectedCallback would go here
+	}
+
+	// Recursively handle children
+	children := node.ChildNodes()
+	for i := 0; i < children.Length(); i++ {
+		traverseForRemoval(children.Item(i), isParentConnected)
+	}
+}
+
+// replaceAllWithNode implements the "replace all" algorithm from WHATWG DOM Section 4.2.3
+func replaceAllWithNode(node, parent Node) {
+	// 1. Let removedNodes be parent's children.
+	removedNodes := make([]Node, 0)
+	children := parent.ChildNodes()
+	for i := 0; i < children.Length(); i++ {
+		removedNodes = append(removedNodes, children.Item(i))
+	}
+
+	// 2. Let addedNodes be the empty set.
+	var addedNodes []Node
+
+	// 3. If node is a DocumentFragment node, then set addedNodes to node's children.
+	// 4. Otherwise, if node is non-null, set addedNodes to « node ».
+	if node != nil {
+		if node.NodeType() == DocumentFragmentNode {
+			fragmentChildren := node.ChildNodes()
+			for i := 0; i < fragmentChildren.Length(); i++ {
+				addedNodes = append(addedNodes, fragmentChildren.Item(i))
+			}
+		} else {
+			addedNodes = []Node{node}
+		}
+	}
+
+	// 5. Remove all parent's children, in tree order, with the suppress observers flag set.
+	for _, child := range removedNodes {
+		removeNode(child, true)
+	}
+
+	// 6. If node is non-null, then insert node into parent before null with the suppress observers flag set.
+	if node != nil {
+		insertNode(node, parent, nil, true)
+	}
+
+	// 7. If either addedNodes or removedNodes is not empty, then queue a tree mutation record for parent with addedNodes, removedNodes, null, and null.
+	if len(addedNodes) > 0 || len(removedNodes) > 0 {
+		queueTreeMutationRecord(parent, addedNodes, removedNodes, nil, nil)
+	}
+}
+
+// Helper functions for the mutation algorithms
+
+// adoptNodeIntoDocument adopts a node into a document
+func adoptNodeIntoDocument(node Node, doc *Document) {
+	node.setOwnerDocument(doc)
+	// Recursively adopt children
+	children := node.ChildNodes()
+	for i := 0; i < children.Length(); i++ {
+		adoptNodeIntoDocument(children.Item(i), doc)
+	}
+}
+
+// runInsertionSteps runs insertion steps for a node (hook for specifications)
+func runInsertionSteps(node Node) {
+	// This is a hook for specifications to define insertion steps
+	// For now, this is a no-op but can be extended
+}
+
+// runPostConnectionSteps runs post-connection steps for a node (hook for specifications)
+func runPostConnectionSteps(node Node) {
+	// This is a hook for specifications to define post-connection steps
+	// For now, this is a no-op but can be extended
+}
+
+// runRemovingSteps runs removing steps for a node (hook for specifications)
+func runRemovingSteps(node, parent Node) {
+	// This is a hook for specifications to define removing steps
+	// For now, this is a no-op but can be extended
+}
+
+// runChildrenChangedSteps runs children changed steps for a node (hook for specifications)
+func runChildrenChangedSteps(parent Node) {
+	// This is a hook for specifications to define children changed steps
+	// For now, this is a no-op but can be extended
+}
+
+// queueTreeMutationRecord queues a tree mutation record
+func queueTreeMutationRecord(target Node, addedNodes, removedNodes []Node, previousSibling, nextSibling Node) {
+	// Get the document's observer registry and notify about the mutation
+	if target.OwnerDocument() != nil {
+		registry := target.OwnerDocument().getObserverRegistry()
+		registry.NotifyMutation(&MutationRecord{
+			Type:            "childList",
+			Target:          target,
+			AddedNodes:      addedNodes,
+			RemovedNodes:    removedNodes,
+			PreviousSibling: previousSibling,
+			NextSibling:     nextSibling,
+		})
+	}
+}
+
+// Legacy validation functions for backward compatibility
+func (n *nodeImpl) validateHierarchy(child Node) *DOMException {
+	return ensurePreInsertValidity(child, n.self, nil)
+}
+
+func (n *nodeImpl) validateHierarchyWithExclusion(child Node, excludeNode Node) *DOMException {
+	// Use the replace-specific validation that excludes the node being replaced
+	return ensureReplaceValidity(child, n.self, excludeNode)
 }
 
 // registerMutationObserver registers a mutation observer for this node
@@ -1629,28 +2150,6 @@ func findViableNextSibling(node Node, excludeNodes []Node) Node {
 			}
 			break
 		}
-	}
-
-	return nil
-}
-
-// preInsert is a helper function that implements the pre-insert algorithm.
-// This is used by the ChildNode methods to safely insert nodes.
-func preInsert(node, parent, child Node) error {
-	if parent == nil {
-		return NewNotFoundError("parent is null")
-	}
-
-	// Validate that the node can be inserted
-	if !canInsertNode(node, parent) {
-		return NewHierarchyRequestError("node cannot be inserted at the specified point in the hierarchy")
-	}
-
-	// Insert the node
-	if child == nil {
-		parent.AppendChild(node)
-	} else {
-		parent.InsertBefore(node, child)
 	}
 
 	return nil
