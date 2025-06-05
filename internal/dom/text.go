@@ -144,6 +144,48 @@ func (t *Text) CloneNode(deep bool) Node {
 	return CloneNodeSpec(t, deep)
 }
 
+// Slottable interface implementation (Text nodes are slottables per WHATWG DOM spec)
+
+// GetSlotName returns empty string for text nodes (they don't have slot attributes)
+func (t *Text) GetSlotName() string {
+	return ""
+}
+
+// SetSlotName is a no-op for text nodes (they don't have slot attributes)
+func (t *Text) SetSlotName(name string) {
+	// Text nodes don't have attributes, so this is a no-op
+}
+
+// GetAssignedSlot returns the slot this text node is assigned to
+func (t *Text) GetAssignedSlot() *Slot {
+	// For now, text nodes don't track assigned slots
+	// This would be implemented when full slot assignment is needed
+	return nil
+}
+
+// AssignedSlot implements the Slottable mixin assignedSlot getter per WHATWG DOM Section 4.2.9
+// The assignedSlot getter steps are to return the result of find a slot given this and true.
+func (t *Text) AssignedSlot() *Slot {
+	return findSlotForSlottable(t, true)
+}
+
+// SetAssignedSlot sets the slot this text node is assigned to
+func (t *Text) SetAssignedSlot(slot *Slot) {
+	// For now, text nodes don't track assigned slots
+	// This would be implemented when full slot assignment is needed
+}
+
+// GetManualSlot returns the manual slot assignment for this text node
+func (t *Text) GetManualSlot() *Slot {
+	// For now, text nodes don't track manual slot assignments
+	return nil
+}
+
+// SetManualSlot sets the manual slot assignment for this text node
+func (t *Text) SetManualSlot(slot *Slot) {
+	// For now, text nodes don't track manual slot assignments
+}
+
 // toJS is a placeholder for JavaScript binding.
 func (t *Text) toJS(vm *goja.Runtime) goja.Value {
 	// This will be implemented later when integrating with Goja

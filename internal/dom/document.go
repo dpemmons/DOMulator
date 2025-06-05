@@ -18,7 +18,7 @@ type Document struct {
 	// MutationObserver agent-level state per WHATWG DOM spec
 	mutationObserverMicrotaskQueued bool
 	pendingMutationObservers        map[*MutationObserver]bool // Set implementation
-	signalSlots                     []*Element                 // For slotchange events
+	signalSlots                     []*Slot                    // For slotchange events
 	mutationStateMutex              sync.Mutex                 // Protects mutation observer state
 
 	// Document properties per WHATWG DOM specification
@@ -33,6 +33,9 @@ type Document struct {
 	doctype        *DocumentType      // DocumentType node reference
 	documentType   string             // Document type ("xml" or "html")
 	mode           string             // Document mode ("no-quirks", "quirks", "limited-quirks")
+
+	// DocumentOrShadowRoot mixin per WHATWG DOM Section 4.2.5
+	customElementRegistry *CustomElementRegistry // Custom element registry
 }
 
 // NewDocument creates a new Document node.
@@ -44,7 +47,7 @@ func NewDocument() *Document {
 		},
 		observerRegistry:         NewObserverRegistry(),
 		pendingMutationObservers: make(map[*MutationObserver]bool),
-		signalSlots:              make([]*Element, 0),
+		signalSlots:              make([]*Slot, 0),
 
 		// Initialize document properties per WHATWG DOM specification defaults
 		implementation: nil, // Will be set after document is fully initialized
@@ -880,7 +883,7 @@ func (d *Document) notifyMutationObservers() {
 	d.pendingMutationObservers = make(map[*MutationObserver]bool)
 
 	// Step 4: Clone signal slots
-	signalSet := make([]*Element, len(d.signalSlots))
+	signalSet := make([]*Slot, len(d.signalSlots))
 	copy(signalSet, d.signalSlots)
 
 	// Step 5: Empty signal slots
@@ -915,6 +918,21 @@ func (d *Document) addPendingMutationObserver(observer *MutationObserver) {
 	d.mutationStateMutex.Lock()
 	defer d.mutationStateMutex.Unlock()
 	d.pendingMutationObservers[observer] = true
+}
+
+// addSignalSlot adds a slot to the signal slots for slotchange events
+func (d *Document) addSignalSlot(slot *Slot) {
+	d.mutationStateMutex.Lock()
+	defer d.mutationStateMutex.Unlock()
+
+	// Check if slot is already in the list to avoid duplicates
+	for _, existingSlot := range d.signalSlots {
+		if existingSlot == slot {
+			return
+		}
+	}
+
+	d.signalSlots = append(d.signalSlots, slot)
 }
 
 // queueMutationRecord implements the "queue a mutation record" algorithm per WHATWG DOM spec
@@ -1043,6 +1061,12 @@ func (d *Document) shouldNotifyForMutation(node, target Node, recordType string,
 func (d *Document) CloneNode(deep bool) Node {
 	// Use the spec-compliant cloning implementation
 	return CloneNodeSpec(d, deep)
+}
+
+// CustomElementRegistry implements the DocumentOrShadowRoot mixin getter per WHATWG DOM Section 4.2.5
+// Returns this document's CustomElementRegistry object, if any; otherwise null.
+func (d *Document) CustomElementRegistry() *CustomElementRegistry {
+	return d.customElementRegistry
 }
 
 // toJS is a placeholder for JavaScript binding.

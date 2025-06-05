@@ -35,7 +35,12 @@ type Element struct {
 	// eventListeners map[EventPhase]map[string][]*EventListener // To be implemented
 
 	// Shadow DOM support
-	// shadowRoot     *ShadowRoot // To be implemented
+	shadowRoot *ShadowRoot
+
+	// Slottable interface support (Element and Text nodes are slottables)
+	slotName     string // For slot attribute
+	assignedSlot *Slot  // Current assigned slot
+	manualSlot   *Slot  // Manual slot assignment
 
 	// Form elements
 	value    string
@@ -999,4 +1004,172 @@ func (e *Element) NextElementSibling() *Element {
 		}
 	}
 	return nil
+}
+
+// Shadow DOM Methods
+
+// ShadowRoot returns the shadow root attached to this element, or nil if none exists
+func (e *Element) ShadowRoot() *ShadowRoot {
+	return e.shadowRoot
+}
+
+// AttachShadow creates and attaches a shadow root to this element
+func (e *Element) AttachShadow(init ShadowRootInit) (*ShadowRoot, error) {
+	// Check if element already has a shadow root
+	if e.shadowRoot != nil {
+		return nil, NewInvalidStateError("Element already has a shadow root")
+	}
+
+	// Validate that this element can have a shadow root
+	if !e.canAttachShadowRoot() {
+		return nil, NewNotSupportedError("This element type cannot have a shadow root")
+	}
+
+	// Create the shadow root
+	shadowRoot := NewShadowRoot(e, init.Mode)
+	if init.SlotAssignment != "" {
+		shadowRoot.SetSlotAssignment(init.SlotAssignment)
+	}
+
+	// Attach it to this element
+	e.shadowRoot = shadowRoot
+
+	return shadowRoot, nil
+}
+
+// canAttachShadowRoot checks if this element type can have a shadow root
+func (e *Element) canAttachShadowRoot() bool {
+	// Per HTML spec, only certain elements can have shadow roots
+	switch strings.ToLower(e.localName) {
+	case "article", "aside", "blockquote", "body", "div", "footer", "h1", "h2", "h3", "h4", "h5", "h6",
+		"header", "main", "nav", "p", "section", "span":
+		return true
+	default:
+		return false
+	}
+}
+
+// Slottable interface implementation
+
+// GetSlotName returns the value of the slot attribute
+func (e *Element) GetSlotName() string {
+	slotAttr := e.GetAttribute("slot")
+	if slotAttr != "" {
+		return slotAttr
+	}
+	return e.slotName
+}
+
+// SetSlotName sets the slot attribute value
+func (e *Element) SetSlotName(name string) {
+	e.slotName = name
+	if name == "" {
+		e.RemoveAttribute("slot")
+	} else {
+		e.SetAttribute("slot", name)
+	}
+
+	// Trigger slot assignment update
+	if shadowRoot := e.getShadowRootFromParent(); shadowRoot != nil {
+		shadowRoot.AssignSlot(e)
+	}
+}
+
+// GetAssignedSlot returns the slot this element is assigned to
+func (e *Element) GetAssignedSlot() *Slot {
+	return e.assignedSlot
+}
+
+// AssignedSlot implements the Slottable mixin assignedSlot getter per WHATWG DOM Section 4.2.9
+// The assignedSlot getter steps are to return the result of find a slot given this and true.
+func (e *Element) AssignedSlot() *Slot {
+	return findSlotForSlottable(e, true)
+}
+
+// findSlotForSlottable implements the "find a slot" algorithm for a slottable node
+// This is used by both Element and Text nodes for their AssignedSlot() method
+func findSlotForSlottable(slottable Slottable, open bool) *Slot {
+	if slottable == nil {
+		return nil
+	}
+
+	parent := slottable.ParentNode()
+	if parent == nil {
+		return nil
+	}
+
+	// Get the parent's shadow root
+	var shadow *ShadowRoot
+	if elem, ok := parent.(*Element); ok {
+		shadow = elem.ShadowRoot()
+	}
+
+	if shadow == nil {
+		return nil
+	}
+
+	// Use the ShadowRoot's FindSlot method which implements the full algorithm
+	return shadow.FindSlot(slottable, open)
+}
+
+// SetAssignedSlot sets the slot this element is assigned to
+func (e *Element) SetAssignedSlot(slot *Slot) {
+	e.assignedSlot = slot
+}
+
+// GetManualSlot returns the manual slot assignment
+func (e *Element) GetManualSlot() *Slot {
+	return e.manualSlot
+}
+
+// SetManualSlot sets the manual slot assignment
+func (e *Element) SetManualSlot(slot *Slot) {
+	e.manualSlot = slot
+}
+
+// getShadowRootFromParent finds the shadow root that contains this element
+func (e *Element) getShadowRootFromParent() *ShadowRoot {
+	parent := e.ParentNode()
+	if parent == nil {
+		return nil
+	}
+
+	if shadowRoot, ok := parent.(*ShadowRoot); ok {
+		return shadowRoot
+	}
+
+	if elem, ok := parent.(*Element); ok {
+		return elem.ShadowRoot()
+	}
+
+	return nil
+}
+
+// GetRootNode returns the root node, optionally crossing shadow boundaries
+func (e *Element) GetRootNode(options *GetRootNodeOptions) Node {
+	if options != nil && options.Composed {
+		// For shadow-including root, traverse up through shadow boundaries
+		current := Node(e)
+		for {
+			parent := current.ParentNode()
+			if parent != nil {
+				current = parent
+				continue
+			}
+
+			// Check if current is a shadow root
+			if shadowRoot, ok := current.(*ShadowRoot); ok {
+				if shadowRoot.Host() != nil {
+					current = shadowRoot.Host()
+					continue
+				}
+			}
+
+			break
+		}
+		return current
+	}
+
+	// Normal root (don't cross shadow boundaries)
+	return e.nodeImpl.GetRootNode(options)
 }
