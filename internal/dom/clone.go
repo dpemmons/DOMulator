@@ -8,6 +8,7 @@ import (
 type CloneOptions struct {
 	Document         *Document
 	Subtree          bool
+	SelfOnly         bool // When true, only clone the node itself, not children
 	Parent           Node
 	FallbackRegistry interface{} // For custom element registry (not fully implemented yet)
 }
@@ -31,16 +32,17 @@ func cloneNode(node Node, options CloneOptions) Node {
 		options.Parent.AppendChild(copy)
 	}
 
-	// If subtree is true, then for each child of node's children, in tree order:
+	// If subtree is true and selfOnly is false, then for each child of node's children, in tree order:
 	// clone a node given child with document set to document, subtree set to subtree,
 	// parent set to copy, and fallbackRegistry set to fallbackRegistry
-	if options.Subtree {
+	if options.Subtree && !options.SelfOnly {
 		children := node.ChildNodes()
 		for i := 0; i < children.Length(); i++ {
 			child := children.Item(i)
 			childOptions := CloneOptions{
 				Document:         options.Document,
 				Subtree:          true,
+				SelfOnly:         false, // Children are always deep cloned
 				Parent:           copy,
 				FallbackRegistry: options.FallbackRegistry,
 			}

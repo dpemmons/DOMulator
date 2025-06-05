@@ -204,8 +204,9 @@ func (d *Document) CreateProcessingInstruction(target, data string) (*Processing
 	return NewProcessingInstruction(target, data, d), nil
 }
 
-// ImportNode returns a copy of node. If deep is true, the copy also includes the node's descendants
-func (d *Document) ImportNode(node Node, deep bool) (Node, error) {
+// ImportNode returns a copy of node. If options is a boolean (legacy), it represents deep cloning.
+// If options is ImportNodeOptions, it supports advanced configuration including selfOnly.
+func (d *Document) ImportNode(node Node, options ...ImportNodeOptionsInput) (Node, error) {
 	// If node is a document or shadow root, throw a "NotSupportedError" DOMException
 	if node.NodeType() == DocumentNode {
 		return nil, NewNotSupportedError("cannot import a document node")
@@ -213,8 +214,31 @@ func (d *Document) ImportNode(node Node, deep bool) (Node, error) {
 
 	// TODO: Add shadow root check when shadow DOM is implemented
 
-	// Return the result of cloning a node with document set to this and deep set to deep
-	return CloneNodeSpec(node, deep), nil
+	// Parse options
+	var opts ImportNodeOptions
+	var err error
+	if len(options) > 0 && options[0] != nil {
+		opts, err = parseImportNodeOptions(options[0])
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// Default: deep clone (subtree=true, selfOnly=false)
+		opts = ImportNodeOptions{SelfOnly: false}
+	}
+
+	// Determine subtree based on selfOnly
+	subtree := !opts.SelfOnly
+
+	// Return the result of cloning a node with document set to this
+	cloneOpts := CloneOptions{
+		Document:         d,
+		Subtree:          subtree,
+		SelfOnly:         opts.SelfOnly,
+		Parent:           nil,
+		FallbackRegistry: opts.CustomElementRegistry,
+	}
+	return cloneNode(node, cloneOpts), nil
 }
 
 // AdoptNode moves node from another document and returns it
@@ -253,33 +277,115 @@ func (d *Document) adoptNode(node Node) {
 	}
 }
 
-// adoptNodeRecursive recursively adopts a node and its descendants
+// adoptNodeRecursive recursively adopts a node and its descendants per WHATWG DOM specification
 func (d *Document) adoptNodeRecursive(node Node) {
-	// Set node's owner document to this document using type-specific setters
-	switch n := node.(type) {
-	case *Element:
-		n.ownerDocument = d
-	case *Text:
-		n.ownerDocument = d
-	case *Comment:
-		n.ownerDocument = d
-	case *CDATASection:
-		n.ownerDocument = d
-	case *ProcessingInstruction:
-		n.ownerDocument = d
-	case *DocumentFragment:
-		n.ownerDocument = d
-	case *Attr:
-		n.ownerDocument = d
-	case *DocumentType:
-		n.ownerDocument = d
+	oldDocument := node.OwnerDocument()
+
+	// For each inclusiveDescendant in node's shadow-including inclusive descendants:
+	// Set inclusiveDescendant's node document to document
+	d.setNodeDocument(node, d)
+
+	// If inclusiveDescendant is an element, then set the node document of each attribute
+	// in inclusiveDescendant's attribute list to document
+	if elem, ok := node.(*Element); ok {
+		// Set attributes' owner document (when attributes are properly implemented as nodes)
+		for name := range elem.attributes {
+			// TODO: Set attribute node document when Attr nodes are fully implemented
+			_ = name
+		}
 	}
+
+	// For each inclusiveDescendant in node's shadow-including inclusive descendants that is custom,
+	// enqueue a custom element callback reaction with inclusiveDescendant,
+	// callback name "adoptedCallback", and « oldDocument, document ».
+	if elem, ok := node.(*Element); ok {
+		d.enqueueCustomElementCallback(elem, "adoptedCallback", oldDocument, d)
+	}
+
+	// For each inclusiveDescendant in node's shadow-including inclusive descendants,
+	// in shadow-including tree order, run the adopting steps with inclusiveDescendant and oldDocument
+	d.runAdoptingSteps(node, oldDocument)
 
 	// Recursively adopt all child nodes
 	children := node.ChildNodes()
 	for i := 0; i < children.Length(); i++ {
 		d.adoptNodeRecursive(children.Item(i))
 	}
+}
+
+// setNodeDocument sets a node's owner document using type-specific setters
+func (d *Document) setNodeDocument(node Node, document *Document) {
+	switch n := node.(type) {
+	case *Element:
+		n.ownerDocument = document
+	case *Text:
+		n.ownerDocument = document
+	case *Comment:
+		n.ownerDocument = document
+	case *CDATASection:
+		n.ownerDocument = document
+	case *ProcessingInstruction:
+		n.ownerDocument = document
+	case *DocumentFragment:
+		n.ownerDocument = document
+	case *Attr:
+		n.ownerDocument = document
+	case *DocumentType:
+		n.ownerDocument = document
+	}
+}
+
+// enqueueCustomElementCallback enqueues a custom element callback reaction
+// This is a placeholder for future custom element support
+func (d *Document) enqueueCustomElementCallback(element *Element, callbackName string, oldDocument, newDocument *Document) {
+	// TODO: Implement custom element callback reactions when custom elements are supported
+	// For now, this is a placeholder that documents the intended behavior
+
+	// Check if element is a custom element
+	if d.isCustomElement(element) {
+		// TODO: Queue "adoptedCallback" reaction with [oldDocument, newDocument] arguments
+		// This would integrate with the custom element reaction queue
+		_ = callbackName
+		_ = oldDocument
+		_ = newDocument
+	}
+}
+
+// isCustomElement checks if an element is a custom element
+// This is a placeholder for future custom element support
+func (d *Document) isCustomElement(element *Element) bool {
+	// TODO: Implement custom element detection when custom elements are supported
+	// Custom elements typically have:
+	// 1. A hyphenated tag name (contains "-")
+	// 2. An entry in the custom element registry
+	// 3. An "is" attribute for customized built-in elements
+
+	tagName := element.TagName()
+
+	// Basic check: custom elements must contain a hyphen
+	// This is a requirement per the HTML specification
+	if strings.Contains(tagName, "-") {
+		return true
+	}
+
+	// Check for customized built-in elements (elements with "is" attribute)
+	if element.GetAttribute("is") != "" {
+		return true
+	}
+
+	return false
+}
+
+// runAdoptingSteps runs the adopting steps for a node
+// This is a placeholder for future specification compliance
+func (d *Document) runAdoptingSteps(node Node, oldDocument *Document) {
+	// TODO: Implement adopting steps when specifications define them
+	// The adopting steps are defined by various specifications and allow
+	// them to perform additional work when a node is adopted
+
+	// For now, this is a placeholder that can be extended by other specifications
+	_ = node
+	_ = oldDocument
 }
 
 // CreateAttribute creates a new attribute with the given local name
@@ -348,28 +454,35 @@ func (d *Document) CreateRange() interface{} {
 }
 
 // CreateNodeIterator creates a new NodeIterator
-func (d *Document) CreateNodeIterator(root Node, whatToShow uint32, filter interface{}) interface{} {
-	// TODO: Implement NodeIterator when available
-	// For now, return a placeholder
-	return map[string]interface{}{
-		"root":                       root,
-		"whatToShow":                 whatToShow,
-		"filter":                     filter,
-		"referenceNode":              root,
-		"pointerBeforeReferenceNode": true,
+func (d *Document) CreateNodeIterator(root Node, whatToShow uint32, filter interface{}) *NodeIterator {
+	// Convert filter parameter to NodeFilter interface
+	var nodeFilter NodeFilter
+	if filter != nil {
+		if nf, ok := filter.(NodeFilter); ok {
+			nodeFilter = nf
+		} else if fn, ok := filter.(func(Node) int); ok {
+			nodeFilter = NodeFilterFunc(fn)
+		}
+		// If filter is not a recognized type, use nil (will default to accept all)
 	}
+
+	return NewNodeIterator(root, whatToShow, nodeFilter)
 }
 
 // CreateTreeWalker creates a new TreeWalker
-func (d *Document) CreateTreeWalker(root Node, whatToShow uint32, filter interface{}) interface{} {
-	// TODO: Implement TreeWalker when available
-	// For now, return a placeholder
-	return map[string]interface{}{
-		"root":        root,
-		"whatToShow":  whatToShow,
-		"filter":      filter,
-		"currentNode": root,
+func (d *Document) CreateTreeWalker(root Node, whatToShow uint32, filter interface{}) *TreeWalker {
+	// Convert filter parameter to NodeFilter interface
+	var nodeFilter NodeFilter
+	if filter != nil {
+		if nf, ok := filter.(NodeFilter); ok {
+			nodeFilter = nf
+		} else if fn, ok := filter.(func(Node) int); ok {
+			nodeFilter = NodeFilterFunc(fn)
+		}
+		// If filter is not a recognized type, use nil (will default to accept all)
 	}
+
+	return NewTreeWalker(root, whatToShow, nodeFilter)
 }
 
 // GetElementById returns the element with the specified ID

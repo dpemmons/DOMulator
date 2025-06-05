@@ -514,16 +514,18 @@ func testDocumentCreateNodeIterator(t *testing.T) {
 		t.Error("Expected CreateNodeIterator to return an iterator")
 	}
 
-	// Should be a map with expected properties
-	if iteratorMap, ok := iterator.(map[string]interface{}); ok {
-		if iteratorMap["root"] != root {
-			t.Error("Expected iterator root to be the specified root")
-		}
-		if iteratorMap["whatToShow"] != uint32(0xFFFFFFFF) {
-			t.Error("Expected iterator whatToShow to match input")
-		}
-	} else {
-		t.Error("Expected CreateNodeIterator to return a map")
+	// Should be a NodeIterator with expected properties
+	if iterator.Root() != root {
+		t.Error("Expected iterator root to be the specified root")
+	}
+	if iterator.WhatToShow() != uint32(0xFFFFFFFF) {
+		t.Error("Expected iterator whatToShow to match input")
+	}
+	if iterator.ReferenceNode() != root {
+		t.Error("Expected iterator referenceNode to be the root initially")
+	}
+	if !iterator.PointerBeforeReferenceNode() {
+		t.Error("Expected iterator pointer to be before reference node initially")
 	}
 }
 
@@ -536,16 +538,15 @@ func testDocumentCreateTreeWalker(t *testing.T) {
 		t.Error("Expected CreateTreeWalker to return a walker")
 	}
 
-	// Should be a map with expected properties
-	if walkerMap, ok := walker.(map[string]interface{}); ok {
-		if walkerMap["root"] != root {
-			t.Error("Expected walker root to be the specified root")
-		}
-		if walkerMap["currentNode"] != root {
-			t.Error("Expected walker currentNode to be the root")
-		}
-	} else {
-		t.Error("Expected CreateTreeWalker to return a map")
+	// Should be a TreeWalker with expected properties
+	if walker.Root() != root {
+		t.Error("Expected walker root to be the specified root")
+	}
+	if walker.WhatToShow() != uint32(0xFFFFFFFF) {
+		t.Error("Expected walker whatToShow to match input")
+	}
+	if walker.CurrentNode() != root {
+		t.Error("Expected walker currentNode to be the root initially")
 	}
 }
 

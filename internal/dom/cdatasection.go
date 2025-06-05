@@ -21,6 +21,7 @@ func NewCDATASection(data string, doc *Document) *CDATASection {
 			},
 		},
 	}
+	cdata.nodeImpl.self = cdata // Set the self reference
 	return cdata
 }
 
