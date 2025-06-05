@@ -46,7 +46,7 @@ func NewDocument() *Document {
 		signalSlots:              make([]*Element, 0),
 
 		// Initialize document properties per WHATWG DOM specification defaults
-		implementation: NewDOMImplementation(),
+		implementation: nil, // Will be set after document is fully initialized
 		url:            "about:blank",
 		documentURI:    "about:blank",
 		compatMode:     "CSS1Compat", // no-quirks mode
@@ -59,6 +59,10 @@ func NewDocument() *Document {
 	}
 	doc.ownerDocument = doc // A document is its own owner document
 	doc.nodeImpl.self = doc // Set the self reference
+
+	// Initialize DOMImplementation after document is fully created
+	doc.implementation = NewDOMImplementation(doc)
+
 	return doc
 }
 
@@ -523,10 +527,10 @@ func (d *Document) GetElementsByName(name string) *HTMLCollection {
 	return NewElementsByNameCollection(d, name)
 }
 
-// DocumentElement returns the document element (usually <html>)
+// DocumentElement returns the document element (the root element)
 func (d *Document) DocumentElement() *Element {
 	for _, child := range d.childNodes {
-		if elem, ok := child.(*Element); ok && elem.TagName() == "html" {
+		if elem, ok := child.(*Element); ok {
 			return elem
 		}
 	}
