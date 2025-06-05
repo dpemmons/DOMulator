@@ -106,27 +106,33 @@ func (hc *HTMLCollection) ToSlice() []*Element {
 
 // ensureCache builds or updates the cache if necessary
 func (hc *HTMLCollection) ensureCache() {
-	if hc.document == nil {
-		return
-	}
+	var currentTime int64
+	var cacheValid bool
 
-	// Get current DOM modification time
-	currentTime := hc.document.getModificationTime()
+	if hc.document != nil {
+		// Get current DOM modification time
+		currentTime = hc.document.getModificationTime()
 
-	hc.mutex.RLock()
-	cacheValid := hc.cacheTime == currentTime
-	hc.mutex.RUnlock()
+		hc.mutex.RLock()
+		cacheValid = hc.cacheTime == currentTime
+		hc.mutex.RUnlock()
 
-	if cacheValid {
-		return // Cache is still valid
+		if cacheValid {
+			return // Cache is still valid
+		}
+	} else {
+		// No document reference - always rebuild cache for now
+		// TODO: Implement better caching strategy for detached elements
+		currentTime = 0
+		cacheValid = false
 	}
 
 	// Rebuild cache
 	hc.mutex.Lock()
 	defer hc.mutex.Unlock()
 
-	// Double-check after acquiring write lock
-	if hc.cacheTime == currentTime {
+	// Double-check after acquiring write lock (only if we have a document)
+	if hc.document != nil && hc.cacheTime == currentTime {
 		return
 	}
 
@@ -147,8 +153,10 @@ func (hc *HTMLCollection) buildCacheRecursive(node Node, isRoot bool) {
 	}
 
 	// Check if this node matches the filter (skip root element for descendant searches)
-	if elem, ok := node.(*Element); ok && hc.filter(node) && !isRoot {
-		hc.cache = append(hc.cache, elem)
+	if elem, ok := node.(*Element); ok && !isRoot {
+		if hc.filter(node) {
+			hc.cache = append(hc.cache, elem)
+		}
 	}
 
 	// Recursively check children

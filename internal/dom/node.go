@@ -1424,6 +1424,7 @@ func preInsert(node, parent, child Node) (Node, *DOMException) {
 
 // insertNode implements the "insert" algorithm from WHATWG DOM Section 4.2.3
 func insertNode(node, parent, child Node, suppressObservers bool) {
+
 	// 1. Let nodes be node's children, if node is a DocumentFragment node; otherwise « node ».
 	var nodes []Node
 	if node.NodeType() == DocumentFragmentNode {
@@ -1475,40 +1476,61 @@ func insertNode(node, parent, child Node, suppressObservers bool) {
 
 	// 7. For each node in nodes, in tree order:
 	for _, nodeToInsert := range nodes {
+		// Determine the document to adopt into
+		var adoptionDoc *Document
+		if doc, ok := parent.(*Document); ok {
+			adoptionDoc = doc // If parent is a document, adopt into it
+		} else {
+			adoptionDoc = parent.OwnerDocument() // Otherwise use parent's owner document
+		}
+
 		// Adopt node into parent's node document.
-		adoptNodeIntoDocument(nodeToInsert, parent.OwnerDocument())
+		adoptNodeIntoDocument(nodeToInsert, adoptionDoc)
 
 		// If child is null, then append node to parent's children.
 		// Otherwise, insert node into parent's children before child's index.
 		// We need to access the underlying nodeImpl for all node types
-		var parentImpl *nodeImpl
-		switch p := parent.(type) {
-		case *nodeImpl:
-			parentImpl = p
-		case *Document:
-			parentImpl = &p.nodeImpl
-		case *Element:
-			parentImpl = &p.nodeImpl
-		case *DocumentFragment:
-			parentImpl = &p.nodeImpl
-		default:
-			// Fallback - try to get nodeImpl through interface
-			if ni, ok := parent.(interface{ getNodeImpl() *nodeImpl }); ok {
-				parentImpl = ni.getNodeImpl()
+		// Use a more direct approach to avoid copying structs
+		if child == nil {
+			// AppendChild case - add to the end
+			switch p := parent.(type) {
+			case *Document:
+				p.nodeImpl.childNodes = append(p.nodeImpl.childNodes, nodeToInsert)
+			case *Element:
+				p.nodeImpl.childNodes = append(p.nodeImpl.childNodes, nodeToInsert)
+			case *DocumentFragment:
+				p.nodeImpl.childNodes = append(p.nodeImpl.childNodes, nodeToInsert)
+			default:
+				// This shouldn't happen if validation worked
+				panic("unsupported parent type for insertion")
 			}
-		}
-
-		if parentImpl != nil {
-			if child == nil {
-				parentImpl.childNodes = append(parentImpl.childNodes, nodeToInsert)
-			} else {
-				// Find child's index and insert before it
-				for i, c := range parentImpl.childNodes {
+		} else {
+			// InsertBefore case - find child's index and insert before it
+			switch p := parent.(type) {
+			case *Document:
+				for i, c := range p.nodeImpl.childNodes {
 					if c == child {
-						parentImpl.childNodes = append(parentImpl.childNodes[:i], append([]Node{nodeToInsert}, parentImpl.childNodes[i:]...)...)
+						p.nodeImpl.childNodes = append(p.nodeImpl.childNodes[:i], append([]Node{nodeToInsert}, p.nodeImpl.childNodes[i:]...)...)
 						break
 					}
 				}
+			case *Element:
+				for i, c := range p.nodeImpl.childNodes {
+					if c == child {
+						p.nodeImpl.childNodes = append(p.nodeImpl.childNodes[:i], append([]Node{nodeToInsert}, p.nodeImpl.childNodes[i:]...)...)
+						break
+					}
+				}
+			case *DocumentFragment:
+				for i, c := range p.nodeImpl.childNodes {
+					if c == child {
+						p.nodeImpl.childNodes = append(p.nodeImpl.childNodes[:i], append([]Node{nodeToInsert}, p.nodeImpl.childNodes[i:]...)...)
+						break
+					}
+				}
+			default:
+				// This shouldn't happen if validation worked
+				panic("unsupported parent type for insertion")
 			}
 		}
 
@@ -1601,31 +1623,32 @@ func removeNode(node Node, suppressObservers bool) {
 	oldNextSibling := node.NextSibling()
 
 	// 6. Remove node from its parent's children.
-	// We need to access the underlying nodeImpl for all node types
-	var parentImpl *nodeImpl
+	// Use a more direct approach to avoid copying structs
 	switch p := parent.(type) {
-	case *nodeImpl:
-		parentImpl = p
 	case *Document:
-		parentImpl = &p.nodeImpl
-	case *Element:
-		parentImpl = &p.nodeImpl
-	case *DocumentFragment:
-		parentImpl = &p.nodeImpl
-	default:
-		// Fallback - try to get nodeImpl through interface
-		if ni, ok := parent.(interface{ getNodeImpl() *nodeImpl }); ok {
-			parentImpl = ni.getNodeImpl()
-		}
-	}
-
-	if parentImpl != nil {
-		for i, child := range parentImpl.childNodes {
+		for i, child := range p.nodeImpl.childNodes {
 			if child == node {
-				parentImpl.childNodes = append(parentImpl.childNodes[:i], parentImpl.childNodes[i+1:]...)
+				p.nodeImpl.childNodes = append(p.nodeImpl.childNodes[:i], p.nodeImpl.childNodes[i+1:]...)
 				break
 			}
 		}
+	case *Element:
+		for i, child := range p.nodeImpl.childNodes {
+			if child == node {
+				p.nodeImpl.childNodes = append(p.nodeImpl.childNodes[:i], p.nodeImpl.childNodes[i+1:]...)
+				break
+			}
+		}
+	case *DocumentFragment:
+		for i, child := range p.nodeImpl.childNodes {
+			if child == node {
+				p.nodeImpl.childNodes = append(p.nodeImpl.childNodes[:i], p.nodeImpl.childNodes[i+1:]...)
+				break
+			}
+		}
+	default:
+		// This shouldn't happen if validation worked
+		panic("unsupported parent type for removal")
 	}
 
 	node.setParent(nil)

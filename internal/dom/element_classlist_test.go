@@ -16,10 +16,7 @@ func TestElement_ClassList_Integration(t *testing.T) {
 	}
 
 	// Test adding classes via classList
-	err := classList.Add("class1", "class2")
-	if err != nil {
-		t.Errorf("Add() error: %v", err)
-	}
+	classList.Add("class1", "class2")
 
 	// Verify the class attribute was updated
 	classAttr := element.GetAttribute("class")
@@ -113,10 +110,7 @@ func TestElement_ClassList_EmptyClass(t *testing.T) {
 	}
 
 	// Test adding to empty
-	err := classList.Add("firstclass")
-	if err != nil {
-		t.Errorf("Add() error: %v", err)
-	}
+	classList.Add("firstclass")
 
 	if element.GetAttribute("class") != "firstclass" {
 		t.Errorf("class attribute = %q, want %q", element.GetAttribute("class"), "firstclass")
@@ -130,21 +124,35 @@ func TestElement_ClassList_InvalidTokens(t *testing.T) {
 	classList := element.ClassList()
 
 	// Test adding invalid tokens
-	err := classList.Add("valid", "invalid token", "valid2")
-	if err == nil {
-		t.Error("Add() should return error for invalid tokens")
-	}
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Error("Add() should panic for invalid tokens")
+			return
+		}
+		if exception, ok := r.(*DOMException); ok {
+			if exception.Name() != "InvalidCharacterError" {
+				t.Errorf("expected InvalidCharacterError, got %s", exception.Name())
+			}
+		} else {
+			t.Errorf("expected DOMException, got %T", r)
+		}
+	}()
 
-	// Verify no changes were made
-	if element.GetAttribute("class") != "" {
-		t.Errorf("class attribute should be empty after failed Add(), got %q", element.GetAttribute("class"))
-	}
+	classList.Add("valid", "invalid token", "valid2")
 
-	// Test that valid operations still work
-	err = classList.Add("valid1", "valid2")
-	if err != nil {
-		t.Errorf("Add() error for valid tokens: %v", err)
-	}
+	// Verify no changes were made (this should not be reached due to panic)
+	t.Error("This line should not be reached due to panic")
+}
+
+func TestElement_ClassList_ValidTokens(t *testing.T) {
+	doc := NewDocument()
+	element := NewElement("div", doc)
+
+	classList := element.ClassList()
+
+	// Test that valid operations work
+	classList.Add("valid1", "valid2")
 
 	if element.GetAttribute("class") != "valid1 valid2" {
 		t.Errorf("class attribute = %q, want %q", element.GetAttribute("class"), "valid1 valid2")

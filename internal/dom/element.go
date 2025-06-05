@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/dop251/goja"
-	"github.com/dpemmons/DOMulator/internal/dom/collection"
 )
 
 // Element represents an element node in the DOM tree.
@@ -18,9 +17,9 @@ type Element struct {
 	localName    string
 	tagName      string // Computed from prefix and localName
 
-	attributes   *NamedNodeMap            // NamedNodeMap to store attributes per spec
-	attributeMap map[string]string        // Legacy compatibility map - will be phased out
-	classList    *collection.DOMTokenList // DOMTokenList for class attribute
+	attributes   *NamedNodeMap     // NamedNodeMap to store attributes per spec
+	attributeMap map[string]string // Legacy compatibility map - will be phased out
+	classList    *DOMTokenList     // DOMTokenList for class attribute
 	// dataset        *Dataset      // To be implemented
 	// style          *CSSStyleDeclaration // To be implemented
 
@@ -218,6 +217,11 @@ func (e *Element) SetIsValue(is string) {
 func (e *Element) SetAttribute(name, value string) {
 	attr := NewAttr(name, value, e.ownerDocument)
 	e.attributes.SetNamedItem(attr)
+
+	// Notify DOMTokenList if class attribute changed
+	if name == "class" && e.classList != nil {
+		e.classList.invalidate()
+	}
 }
 
 // GetAttribute returns the value of the named attribute on the specified element.
@@ -244,6 +248,11 @@ func (e *Element) RemoveAttribute(name string) {
 		}
 	}()
 	e.attributes.RemoveNamedItem(name)
+
+	// Notify DOMTokenList if class attribute changed
+	if name == "class" && e.classList != nil {
+		e.classList.invalidate()
+	}
 }
 
 // GetAttributeNS returns the value of the attribute with the specified namespace and local name.
@@ -284,9 +293,9 @@ func (e *Element) RemoveAttributeNS(namespaceURI, localName string) {
 }
 
 // ClassList returns the DOMTokenList for the class attribute
-func (e *Element) ClassList() *collection.DOMTokenList {
+func (e *Element) ClassList() *DOMTokenList {
 	if e.classList == nil {
-		e.classList = collection.NewDOMTokenList(e, "class")
+		e.classList = NewDOMTokenList(e, "class")
 	}
 	return e.classList
 }
