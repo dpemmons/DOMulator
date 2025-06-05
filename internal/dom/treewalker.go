@@ -75,344 +75,329 @@ func (tw *TreeWalker) SetCurrentNode(node Node) {
 }
 
 // ParentNode moves to and returns the parent node that passes the filter
+// Per WHATWG DOM spec Section 6.2
 func (tw *TreeWalker) ParentNode() Node {
 	tw.mutex.Lock()
 	defer tw.mutex.Unlock()
 
-	current := tw.currentNode.ParentNode()
-	for current != nil && current != tw.root {
-		result := tw.filter.AcceptNode(current)
-		if result == NodeFilterAccept {
-			tw.currentNode = current
-			return current
-		}
-		current = current.ParentNode()
-	}
+	node := tw.currentNode
 
-	// Check the root itself
-	if current == tw.root {
-		result := tw.filter.AcceptNode(current)
-		if result == NodeFilterAccept {
-			tw.currentNode = current
-			return current
+	// While node is non-null and is not this's root:
+	for node != nil && node != tw.root {
+		// Set node to node's parent.
+		node = node.ParentNode()
+
+		// If node is non-null and filtering node within this returns FILTER_ACCEPT,
+		// then set this's current to node and return node.
+		if node != nil && tw.filteringNodeWithin(node) == NodeFilterAccept {
+			tw.currentNode = node
+			return node
 		}
 	}
 
+	// Return null.
 	return nil
 }
 
 // FirstChild moves to and returns the first child that passes the filter
+// Per WHATWG DOM spec Section 6.2
 func (tw *TreeWalker) FirstChild() Node {
 	tw.mutex.Lock()
 	defer tw.mutex.Unlock()
 
-	return tw.traverseChildren(tw.currentNode, true)
+	return tw.traverseChildren(tw.currentNode, "first")
 }
 
 // LastChild moves to and returns the last child that passes the filter
+// Per WHATWG DOM spec Section 6.2
 func (tw *TreeWalker) LastChild() Node {
 	tw.mutex.Lock()
 	defer tw.mutex.Unlock()
 
-	return tw.traverseChildren(tw.currentNode, false)
-}
-
-// PreviousSibling moves to and returns the previous sibling that passes the filter
-func (tw *TreeWalker) PreviousSibling() Node {
-	tw.mutex.Lock()
-	defer tw.mutex.Unlock()
-
-	return tw.traverseSiblings(tw.currentNode, false)
+	return tw.traverseChildren(tw.currentNode, "last")
 }
 
 // NextSibling moves to and returns the next sibling that passes the filter
+// Per WHATWG DOM spec Section 6.2
 func (tw *TreeWalker) NextSibling() Node {
 	tw.mutex.Lock()
 	defer tw.mutex.Unlock()
 
-	return tw.traverseSiblings(tw.currentNode, true)
+	return tw.traverseSiblings(tw.currentNode, "next")
+}
+
+// PreviousSibling moves to and returns the previous sibling that passes the filter
+// Per WHATWG DOM spec Section 6.2
+func (tw *TreeWalker) PreviousSibling() Node {
+	tw.mutex.Lock()
+	defer tw.mutex.Unlock()
+
+	return tw.traverseSiblings(tw.currentNode, "previous")
 }
 
 // PreviousNode moves to and returns the previous node in document order that passes the filter
+// Per WHATWG DOM spec Section 6.2
 func (tw *TreeWalker) PreviousNode() Node {
 	tw.mutex.Lock()
 	defer tw.mutex.Unlock()
 
-	current := tw.currentNode
-	if current == tw.root {
-		return nil
-	}
+	node := tw.currentNode
 
-	// Get the previous node in document order
-	var prev Node
+	// While node is not this's root:
+	for node != tw.root {
+		// Let sibling be node's previous sibling.
+		sibling := node.PreviousSibling()
 
-	// Try previous sibling
-	if sibling := current.PreviousSibling(); sibling != nil {
-		// Go to the deepest last descendant of the sibling
-		prev = tw.getLastDescendantOrSelf(sibling)
-	} else {
-		// Go to parent
-		prev = current.ParentNode()
-	}
+		// While sibling is non-null:
+		for sibling != nil {
+			// Set node to sibling.
+			node = sibling
 
-	// Find the previous acceptable node
-	for prev != nil && tw.isNodeWithinRoot(prev) {
-		result := tw.filter.AcceptNode(prev)
-		if result == NodeFilterAccept {
-			tw.currentNode = prev
-			return prev
+			// Let result be the result of filtering node within this.
+			result := tw.filteringNodeWithin(node)
+
+			// While result is not FILTER_REJECT and node has a child:
+			for result != NodeFilterReject && node.HasChildNodes() {
+				// Set node to node's last child.
+				node = node.LastChild()
+
+				// Set result to the result of filtering node within this.
+				result = tw.filteringNodeWithin(node)
+			}
+
+			// If result is FILTER_ACCEPT, then set this's current to node and return node.
+			if result == NodeFilterAccept {
+				tw.currentNode = node
+				return node
+			}
+
+			// Set sibling to node's previous sibling.
+			sibling = node.PreviousSibling()
 		}
 
-		// Continue searching backwards
-		if prev == tw.root {
-			break
+		// If node is this's root or node's parent is null, then return null.
+		if node == tw.root || node.ParentNode() == nil {
+			return nil
 		}
 
-		// Get next previous node
-		if prevSibling := prev.PreviousSibling(); prevSibling != nil {
-			prev = tw.getLastDescendantOrSelf(prevSibling)
-		} else {
-			prev = prev.ParentNode()
+		// Set node to node's parent.
+		node = node.ParentNode()
+
+		// If the return value of filtering node within this is FILTER_ACCEPT,
+		// then set this's current to node and return node.
+		if tw.filteringNodeWithin(node) == NodeFilterAccept {
+			tw.currentNode = node
+			return node
 		}
 	}
 
+	// Return null.
 	return nil
 }
 
 // NextNode moves to and returns the next node in document order that passes the filter
+// Per WHATWG DOM spec Section 6.2
 func (tw *TreeWalker) NextNode() Node {
 	tw.mutex.Lock()
 	defer tw.mutex.Unlock()
 
-	current := tw.currentNode
+	node := tw.currentNode
+	result := NodeFilterAccept
 
-	// Try descendants first
-	if current.HasChildNodes() {
-		child := current.FirstChild()
-		for child != nil {
-			if tw.isNodeWithinRoot(child) {
-				result := tw.filter.AcceptNode(child)
-				if result == NodeFilterAccept {
-					tw.currentNode = child
-					return child
-				}
-				if result == NodeFilterSkip && child.HasChildNodes() {
-					// Skip this node but check its children
-					subChild := child.FirstChild()
-					for subChild != nil {
-						if tw.isNodeWithinRoot(subChild) {
-							result := tw.filter.AcceptNode(subChild)
-							if result == NodeFilterAccept {
-								tw.currentNode = subChild
-								return subChild
-							}
-						}
-						subChild = subChild.NextSibling()
-					}
-				}
-			}
-			child = child.NextSibling()
-		}
-	}
+	// While true:
+	for {
+		// While result is not FILTER_REJECT and node has a child:
+		for result != NodeFilterReject && node.HasChildNodes() {
+			// Set node to its first child.
+			node = node.FirstChild()
 
-	// Try siblings and ancestors' siblings
-	node := current
-	for node != nil && node != tw.root {
-		if sibling := node.NextSibling(); sibling != nil && tw.isNodeWithinRoot(sibling) {
-			result := tw.filter.AcceptNode(sibling)
+			// Set result to the result of filtering node within this.
+			result = tw.filteringNodeWithin(node)
+
+			// If result is FILTER_ACCEPT, then set this's current to node and return node.
 			if result == NodeFilterAccept {
-				tw.currentNode = sibling
-				return sibling
-			}
-			// Check sibling's descendants
-			if result == NodeFilterSkip {
-				descendant := tw.getFirstDescendant(sibling)
-				for descendant != nil {
-					if tw.isNodeWithinRoot(descendant) {
-						result := tw.filter.AcceptNode(descendant)
-						if result == NodeFilterAccept {
-							tw.currentNode = descendant
-							return descendant
-						}
-					}
-					descendant = tw.getNextInSubtree(descendant, sibling)
-				}
-			}
-			// Continue with next sibling
-			siblingNext := sibling.NextSibling()
-			for siblingNext != nil && tw.isNodeWithinRoot(siblingNext) {
-				result := tw.filter.AcceptNode(siblingNext)
-				if result == NodeFilterAccept {
-					tw.currentNode = siblingNext
-					return siblingNext
-				}
-				siblingNext = siblingNext.NextSibling()
+				tw.currentNode = node
+				return node
 			}
 		}
-		node = node.ParentNode()
-	}
 
-	return nil
+		// Let sibling be null.
+		var sibling Node
+
+		// Let temporary be node.
+		temporary := node
+
+		// While temporary is non-null:
+		for temporary != nil {
+			// If temporary is this's root, then return null.
+			if temporary == tw.root {
+				return nil
+			}
+
+			// Set sibling to temporary's next sibling.
+			sibling = temporary.NextSibling()
+
+			// If sibling is non-null, then set node to sibling and break.
+			if sibling != nil {
+				node = sibling
+				break
+			}
+
+			// Set temporary to temporary's parent.
+			temporary = temporary.ParentNode()
+		}
+
+		// Set result to the result of filtering node within this.
+		result = tw.filteringNodeWithin(node)
+
+		// If result is FILTER_ACCEPT, then set this's current to node and return node.
+		if result == NodeFilterAccept {
+			tw.currentNode = node
+			return node
+		}
+	}
 }
 
-// traverseChildren traverses children of a node
-func (tw *TreeWalker) traverseChildren(node Node, forward bool) Node {
-	if !node.HasChildNodes() {
-		return nil
-	}
+// traverseChildren implements the "traverse children" algorithm from WHATWG DOM spec
+func (tw *TreeWalker) traverseChildren(walker Node, childType string) Node {
+	// Let node be walker's current.
+	node := walker
 
-	var child Node
-	if forward {
-		child = node.FirstChild()
+	// Set node to node's first child if type is first, and node's last child if type is last.
+	if childType == "first" {
+		node = node.FirstChild()
 	} else {
-		child = node.LastChild()
+		node = node.LastChild()
 	}
 
-	for child != nil {
-		if tw.isNodeWithinRoot(child) {
-			result := tw.filter.AcceptNode(child)
-			if result == NodeFilterAccept {
-				tw.currentNode = child
-				return child
+	// While node is non-null:
+	for node != nil {
+		// Let result be the result of filtering node within walker.
+		result := tw.filteringNodeWithin(node)
+
+		// If result is FILTER_ACCEPT, then set walker's current to node and return node.
+		if result == NodeFilterAccept {
+			tw.currentNode = node
+			return node
+		}
+
+		// If result is FILTER_SKIP:
+		if result == NodeFilterSkip {
+			// Let child be node's first child if type is first, and node's last child if type is last.
+			var child Node
+			if childType == "first" {
+				child = node.FirstChild()
+			} else {
+				child = node.LastChild()
 			}
-			// For SKIP, check children of this node
-			if result == NodeFilterSkip {
-				grandchild := tw.traverseChildren(child, forward)
-				if grandchild != nil {
-					return grandchild
-				}
+
+			// If child is non-null, then set node to child and continue.
+			if child != nil {
+				node = child
+				continue
 			}
 		}
 
-		if forward {
-			child = child.NextSibling()
-		} else {
-			child = child.PreviousSibling()
+		// While node is non-null:
+		for node != nil {
+			// Let sibling be node's next sibling if type is first, and node's previous sibling if type is last.
+			var sibling Node
+			if childType == "first" {
+				sibling = node.NextSibling()
+			} else {
+				sibling = node.PreviousSibling()
+			}
+
+			// If sibling is non-null, then set node to sibling and break.
+			if sibling != nil {
+				node = sibling
+				break
+			}
+
+			// Let parent be node's parent.
+			parent := node.ParentNode()
+
+			// If parent is null, walker's root, or walker's current, then return null.
+			if parent == nil || parent == tw.root || parent == tw.currentNode {
+				return nil
+			}
+
+			// Set node to parent.
+			node = parent
 		}
 	}
 
+	// Return null.
 	return nil
 }
 
-// traverseSiblings traverses siblings of a node
-func (tw *TreeWalker) traverseSiblings(node Node, forward bool) Node {
-	var sibling Node
-	if forward {
-		sibling = node.NextSibling()
-	} else {
-		sibling = node.PreviousSibling()
-	}
+// traverseSiblings implements the "traverse siblings" algorithm from WHATWG DOM spec
+func (tw *TreeWalker) traverseSiblings(walker Node, siblingType string) Node {
+	// Let node be walker's current.
+	node := walker
 
-	for sibling != nil {
-		if tw.isNodeWithinRoot(sibling) {
-			result := tw.filter.AcceptNode(sibling)
-			if result == NodeFilterAccept {
-				tw.currentNode = sibling
-				return sibling
-			}
-			// For SKIP, check children of this sibling
-			if result == NodeFilterSkip {
-				child := tw.traverseChildren(sibling, forward)
-				if child != nil {
-					return child
-				}
-			}
-		}
-
-		if forward {
-			sibling = sibling.NextSibling()
-		} else {
-			sibling = sibling.PreviousSibling()
-		}
-	}
-
-	return nil
-}
-
-// isNodeWithinRoot checks if a node is within the walker's root
-func (tw *TreeWalker) isNodeWithinRoot(node Node) bool {
-	if node == nil {
-		return false
-	}
-
-	// Check if node is the root
+	// If node is root, then return null.
 	if node == tw.root {
-		return true
+		return nil
 	}
 
-	// Check if node is a descendant of root
-	current := node.ParentNode()
-	for current != nil {
-		if current == tw.root {
-			return true
+	// While true:
+	for {
+		// Let sibling be node's next sibling if type is next, and node's previous sibling if type is previous.
+		var sibling Node
+		if siblingType == "next" {
+			sibling = node.NextSibling()
+		} else {
+			sibling = node.PreviousSibling()
 		}
-		current = current.ParentNode()
-	}
 
-	return false
-}
+		// While sibling is non-null:
+		for sibling != nil {
+			// Set node to sibling.
+			node = sibling
 
-// getFirstDescendant gets the first descendant of a node
-func (tw *TreeWalker) getFirstDescendant(node Node) Node {
-	if !node.HasChildNodes() {
-		return nil
-	}
-	return node.FirstChild()
-}
+			// Let result be the result of filtering node within walker.
+			result := tw.filteringNodeWithin(node)
 
-// getLastDescendantOrSelf gets the deepest last descendant or the node itself
-func (tw *TreeWalker) getLastDescendantOrSelf(node Node) Node {
-	current := node
-	for current.HasChildNodes() {
-		current = current.LastChild()
-	}
-	return current
-}
+			// If result is FILTER_ACCEPT, then set walker's current to node and return node.
+			if result == NodeFilterAccept {
+				tw.currentNode = node
+				return node
+			}
 
-// getNextInSubtree gets the next node within a subtree
-func (tw *TreeWalker) getNextInSubtree(node, root Node) Node {
-	if node == root {
-		return nil
-	}
+			// Set sibling to node's first child if type is next, and node's last child if type is previous.
+			if siblingType == "next" {
+				sibling = node.FirstChild()
+			} else {
+				sibling = node.LastChild()
+			}
 
-	// Try first child
-	if node.HasChildNodes() {
-		return node.FirstChild()
-	}
-
-	// Try next sibling
-	if sibling := node.NextSibling(); sibling != nil {
-		return sibling
-	}
-
-	// Go up to find ancestor with next sibling
-	current := node.ParentNode()
-	for current != nil && current != root {
-		if sibling := current.NextSibling(); sibling != nil {
-			return sibling
+			// If result is FILTER_REJECT or sibling is null, then set sibling to node's next sibling if type is next, and node's previous sibling if type is previous.
+			if result == NodeFilterReject || sibling == nil {
+				if siblingType == "next" {
+					sibling = node.NextSibling()
+				} else {
+					sibling = node.PreviousSibling()
+				}
+			}
 		}
-		current = current.ParentNode()
-	}
 
-	return nil
+		// Set node to node's parent.
+		node = node.ParentNode()
+
+		// If node is null or walker's root, then return null.
+		if node == nil || node == tw.root {
+			return nil
+		}
+
+		// If the return value of filtering node within walker is FILTER_ACCEPT, then return null.
+		if tw.filteringNodeWithin(node) == NodeFilterAccept {
+			return nil
+		}
+	}
 }
 
-// getPreviousNodeInSubtree gets the previous node within a subtree
-func (tw *TreeWalker) getPreviousNodeInSubtree(node, root Node) Node {
-	if node == root {
-		return nil
-	}
-
-	// Try previous sibling and its descendants
-	if sibling := node.PreviousSibling(); sibling != nil {
-		return tw.getLastDescendantOrSelf(sibling)
-	}
-
-	// Go to parent
-	parent := node.ParentNode()
-	if parent != nil && parent != root {
-		return parent
-	}
-
-	return nil
+// filteringNodeWithin implements the "filtering node within" algorithm
+func (tw *TreeWalker) filteringNodeWithin(node Node) int {
+	return tw.filter.AcceptNode(node)
 }
