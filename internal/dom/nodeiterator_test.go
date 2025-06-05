@@ -241,7 +241,8 @@ func TestNodeIteratorWithCustomFilter(t *testing.T) {
 	// Custom filter: only accept divs with class="target"
 	customFilter := NodeFilterFunc(func(node Node) int {
 		if elem, ok := node.(*Element); ok {
-			if elem.TagName() == "div" && elem.GetAttribute("class") == "target" {
+			// Use LocalName for case-insensitive matching against "div"
+			if elem.LocalName() == "div" && elem.GetAttribute("class") == "target" {
 				return NodeFilterAccept
 			}
 		}
@@ -284,7 +285,8 @@ func TestNodeIteratorWithRejectingFilter(t *testing.T) {
 	// Filter that rejects span elements
 	rejectingFilter := NodeFilterFunc(func(node Node) int {
 		if elem, ok := node.(*Element); ok {
-			if elem.TagName() == "span" {
+			// Use LocalName for case-insensitive matching against "span"
+			if elem.LocalName() == "span" {
 				return NodeFilterReject
 			}
 		}

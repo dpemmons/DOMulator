@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/dop251/goja"
+	"github.com/dpemmons/DOMulator/internal/dom/ranges"
 )
 
 // Document represents the entire HTML document.
@@ -145,18 +146,36 @@ func (d *Document) CreateElement(tagName string, options ...ElementCreationOptio
 
 // CreateElementNS creates a new element with the given namespace URI and qualified name
 func (d *Document) CreateElementNS(namespaceURI, qualifiedName string, options ...ElementCreationOptionsInput) (*Element, error) {
-	elem, err := NewElementNS(namespaceURI, qualifiedName, d)
-	if err != nil {
-		return nil, err
-	}
+	var elem *Element
+	var err error
 
-	// Handle options if provided
-	if len(options) > 0 && options[0] != nil {
-		opts, parseErr := parseElementCreationOptions(options[0])
-		if parseErr == nil && opts.Is != "" {
-			elem.SetIsValue(opts.Is)
-			// Also set as an attribute for HTML compatibility
-			elem.SetAttribute("is", opts.Is)
+	// Per DOM Spec for createElementNS:
+	// If namespace is the HTML namespace, and document is an HTML document,
+	// let tagName be qualifiedName, converted to ASCII lowercase. Otherwise, let tagName be qualifiedName.
+	// Then, effectively call the internal "create an element" steps.
+	if namespaceURI == HTMLNamespace && d.documentType == "html" {
+		lcQualifiedName := strings.ToLower(qualifiedName)
+		// Call CreateElement which uses NewElement. NewElement handles HTML uppercasing for NodeName/TagName.
+		elem = d.CreateElement(lcQualifiedName, options...) // options are passed through
+		// Ensure the namespaceURI is correctly set to HTML, as CreateElement (via NewElement)
+		// might set it to "" for known HTML tags if no namespace is explicitly given to NewElement.
+		if elem != nil {
+			elem.namespaceURI = HTMLNamespace
+		}
+	} else {
+		// For non-HTML namespaces or non-HTML documents
+		elem, err = NewElementNS(namespaceURI, qualifiedName, d)
+		if err != nil {
+			return nil, err
+		}
+		// Handle options if provided (already done by CreateElement if it was called)
+		if len(options) > 0 && options[0] != nil {
+			opts, parseErr := parseElementCreationOptions(options[0])
+			if parseErr == nil && opts.Is != "" {
+				elem.SetIsValue(opts.Is)
+				// Also set as an attribute for HTML compatibility
+				elem.SetAttribute("is", opts.Is)
+			}
 		}
 	}
 
@@ -445,16 +464,10 @@ func (d *Document) CreateEvent(interfaceName string) (interface{}, error) {
 }
 
 // CreateRange creates a new live range
-func (d *Document) CreateRange() interface{} {
-	// TODO: Implement Range when available
-	// For now, return a placeholder
-	return map[string]interface{}{
-		"startContainer": d,
-		"startOffset":    0,
-		"endContainer":   d,
-		"endOffset":      0,
-		"collapsed":      true,
-	}
+func (d *Document) CreateRange() *DOMRange {
+	// Use the ranges.NewRange function with a proper adapter
+	docAdapter := &RangeDocumentAdapter{document: d}
+	return ranges.NewRange(docAdapter)
 }
 
 // CreateNodeIterator creates a new NodeIterator
@@ -543,7 +556,7 @@ func (d *Document) Body() *Element {
 		children := docElem.ChildNodes()
 		for i := 0; i < children.Length(); i++ {
 			child := children.Item(i)
-			if elem, ok := child.(*Element); ok && elem.TagName() == "body" {
+			if elem, ok := child.(*Element); ok && elem.TagName() == "BODY" { // Expect uppercase
 				return elem
 			}
 		}
@@ -557,7 +570,7 @@ func (d *Document) Head() *Element {
 		children := docElem.ChildNodes()
 		for i := 0; i < children.Length(); i++ {
 			child := children.Item(i)
-			if elem, ok := child.(*Element); ok && elem.TagName() == "head" {
+			if elem, ok := child.(*Element); ok && elem.TagName() == "HEAD" { // Expect uppercase
 				return elem
 			}
 		}

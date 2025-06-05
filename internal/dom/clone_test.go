@@ -154,8 +154,8 @@ func TestElementCloning(t *testing.T) {
 		}
 
 		clonedElem := cloned.(*Element)
-		if clonedElem.TagName() != "div" {
-			t.Errorf("Expected tag name 'div', got %q", clonedElem.TagName())
+		if clonedElem.TagName() != "DIV" { // Expect uppercase
+			t.Errorf("Expected tag name 'DIV', got %q", clonedElem.TagName())
 		}
 
 		// Verify attributes are copied
@@ -200,8 +200,8 @@ func TestElementCloning(t *testing.T) {
 
 		// Verify basic properties
 		clonedElem := cloned.(*Element)
-		if clonedElem.TagName() != "div" {
-			t.Errorf("Expected tag name 'div', got %q", clonedElem.TagName())
+		if clonedElem.TagName() != "DIV" { // Expect uppercase
+			t.Errorf("Expected tag name 'DIV', got %q", clonedElem.TagName())
 		}
 
 		// Verify attributes are copied
@@ -231,8 +231,8 @@ func TestElementCloning(t *testing.T) {
 		}
 
 		spanElem := child2.(*Element)
-		if spanElem.TagName() != "span" {
-			t.Errorf("Expected span tag name, got %q", spanElem.TagName())
+		if spanElem.TagName() != "SPAN" { // Expect uppercase
+			t.Errorf("Expected span tag name 'SPAN', got %q", spanElem.TagName())
 		}
 
 		if spanElem.GetAttribute("style") != "font-weight: bold" {
@@ -411,8 +411,8 @@ func TestDocumentCloning(t *testing.T) {
 		}
 
 		htmlElem := child2.(*Element)
-		if htmlElem.TagName() != "html" {
-			t.Errorf("Expected html tag, got %q", htmlElem.TagName())
+		if htmlElem.TagName() != "HTML" { // Expect uppercase
+			t.Errorf("Expected html tag 'HTML', got %q", htmlElem.TagName())
 		}
 
 		// Check nested structure
@@ -422,8 +422,8 @@ func TestDocumentCloning(t *testing.T) {
 		}
 
 		headElem := htmlChildren.Item(0).(*Element)
-		if headElem.TagName() != "head" {
-			t.Errorf("Expected head tag, got %q", headElem.TagName())
+		if headElem.TagName() != "HEAD" { // Expect uppercase
+			t.Errorf("Expected head tag 'HEAD', got %q", headElem.TagName())
 		}
 
 		// Verify all cloned nodes are different instances

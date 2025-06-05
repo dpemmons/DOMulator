@@ -147,7 +147,8 @@ func TestNodeFilterSpecCompliance(t *testing.T) {
 
 			// Test with custom filter
 			elementFilter := NodeFilterFunc(func(node Node) int {
-				if elem, ok := node.(*Element); ok && elem.TagName() == "div" {
+				// Use LocalName for case-insensitive matching against lowercase "div"
+				if elem, ok := node.(*Element); ok && elem.LocalName() == "div" {
 					return NodeFilterAccept
 				}
 				return NodeFilterSkip
@@ -169,8 +170,8 @@ func TestNodeFilterSpecCompliance(t *testing.T) {
 				t.Errorf("Expected 1 div element, got %d", len(nodes2))
 			}
 			if len(nodes2) > 0 {
-				if elem, ok := nodes2[0].(*Element); !ok || elem.TagName() != "div" {
-					t.Errorf("Expected to find div element, got %v", nodes2[0])
+				if elem, ok := nodes2[0].(*Element); !ok || elem.LocalName() != "div" { // Check LocalName
+					t.Errorf("Expected to find div element, got %v (TagName: %s, LocalName: %s)", nodes2[0], elem.TagName(), elem.LocalName())
 				}
 			}
 		})
@@ -245,7 +246,8 @@ func TestNodeFilterSpecCompliance(t *testing.T) {
 			// Custom filter that returns different values based on tag name
 			behaviorFilter := NodeFilterFunc(func(node Node) int {
 				if elem, ok := node.(*Element); ok {
-					switch elem.TagName() {
+					// Use LocalName for case-insensitive matching against lowercase tag names
+					switch elem.LocalName() {
 					case "accept":
 						return NodeFilterAccept
 					case "reject":
@@ -278,8 +280,8 @@ func TestNodeFilterSpecCompliance(t *testing.T) {
 
 			// Verify we got the right nodes
 			if len(nodes) >= 2 {
-				if elem, ok := nodes[1].(*Element); !ok || elem.TagName() != "accept" {
-					t.Errorf("Expected second node to be 'accept' element, got %v", nodes[1])
+				if elem, ok := nodes[1].(*Element); !ok || elem.LocalName() != "accept" { // Check LocalName
+					t.Errorf("Expected second node to be 'accept' element, got %v (TagName: %s, LocalName: %s)", nodes[1], elem.TagName(), elem.LocalName())
 				}
 			}
 		})
@@ -327,7 +329,8 @@ func TestNodeFilterIntegrationCompliance(t *testing.T) {
 					"header": true, "nav": true, "main": true,
 					"article": true, "section": true, "footer": true,
 				}
-				if semanticTags[elem.TagName()] {
+				// Use LocalName for case-insensitive matching against lowercase keys in map
+				if semanticTags[elem.LocalName()] {
 					return NodeFilterAccept
 				}
 			}

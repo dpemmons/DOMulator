@@ -54,23 +54,25 @@ func NewElement(tagName string, doc *Document) *Element {
 	// NewElement does not automatically assign namespaces - use NewElementNS for that
 	namespaceURI := info.NamespaceURI
 
-	// According to DOM spec, Element NodeName should be "Its HTML-uppercased qualified name"
-	// This applies to known HTML elements even when namespace is not explicitly set
-	nodeName := tagName
-	if namespaceURI == htmlNamespace || (namespaceURI == "" && isHTMLElement(info.LocalName)) {
-		nodeName = strings.ToUpper(tagName)
+	// According to DOM spec, Element NodeName (and TagName) should be "Its HTML-uppercased qualified name"
+	// for HTML elements in an HTML document.
+	nodeNameValue := tagName         // tagName is lowercase from parser
+	localNameValue := info.LocalName // Should be the lowercase name
+
+	if namespaceURI == htmlNamespace || (namespaceURI == "" && isHTMLElement(localNameValue)) {
+		nodeNameValue = strings.ToUpper(tagName)
 	}
 
 	elem := &Element{
 		nodeImpl: nodeImpl{
 			nodeType:      ElementNode,
-			nodeName:      nodeName, // NodeName for Element is its HTML-uppercased qualified name per spec
+			nodeName:      nodeNameValue, // Uppercase for HTML elements
 			ownerDocument: doc,
 		},
 		namespaceURI: namespaceURI,
 		prefix:       info.Prefix,
-		localName:    info.LocalName,
-		tagName:      tagName,
+		localName:    localNameValue,          // Store the original (lowercase) local name
+		tagName:      nodeNameValue,           // tagName field should mirror nodeName for elements
 		attributes:   make(map[string]string), // Initialize the attributes map
 	}
 	elem.nodeImpl.self = elem // Set the self reference
@@ -173,8 +175,9 @@ func (e *Element) invalidateCaches() {
 }
 
 // TagName returns the tag name of the element.
+// For HTML elements in an HTML document, this is an uppercase name.
 func (e *Element) TagName() string {
-	return e.tagName
+	return e.tagName // This field is now set to the (potentially uppercased) nodeName
 }
 
 // NamespaceURI returns the namespace URI of the element.

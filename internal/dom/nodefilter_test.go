@@ -262,7 +262,8 @@ func TestNodeFilterWithComplexCustomFilter(t *testing.T) {
 	// Custom filter that only accepts divs with attributes
 	customFilter := NodeFilterFunc(func(node Node) int {
 		if elem, ok := node.(*Element); ok {
-			if elem.TagName() == "div" && (elem.GetAttribute("id") != "" || elem.GetAttribute("class") != "") {
+			// Use LocalName for case-insensitive matching against "div"
+			if elem.LocalName() == "div" && (elem.GetAttribute("id") != "" || elem.GetAttribute("class") != "") {
 				return NodeFilterAccept
 			}
 		}

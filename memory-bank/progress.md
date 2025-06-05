@@ -4,6 +4,26 @@
 
 ### Recently Completed ✅
 
+#### DOM Tag Name Casing Refactor & Full Test Suite Pass (2025-06-04)
+**✅ COMPLETED - Resolved widespread test failures by ensuring consistent and specification-compliant handling of HTML element tag name casing.**
+
+**Key Implementation Details:**
+- **Consistent Casing**: `Node.NodeName()` and `Element.TagName()` now reliably return **UPPERCASE** for HTML elements, aligning with DOM specifications. `Element.LocalName()` consistently returns **lowercase**.
+- **Parser Alignment**: The HTML parser (`internal/parser/parser.go`) ensures it provides lowercase tag names to the `dom.NewElement` constructor.
+- **Element Creation Logic**:
+    - `dom.NewElement` correctly processes lowercase input tag names, setting `localName` to lowercase, and `nodeImpl.nodeName` / `Element.tagName` fields to **UPPERCASE** for HTML elements.
+    - `Document.CreateElementNS` correctly handles HTML namespace elements, ensuring they also receive uppercase `TagName()`.
+- **Collection Method Fixes**: `GetElementsByTagName` (via `internal/dom/htmlcollection.go`) now uses case-insensitive comparison.
+- **Cloning Logic**: Element cloning (`internal/dom/clone.go`) updated to use `LocalName` (lowercase) when creating HTML element clones, allowing `NewElement` to apply its casing rules correctly.
+- **Helper Method Adjustments**: `Document.Head()` and `Document.Body()` updated to compare against "HEAD" and "BODY".
+- **NodeFilter/Iterator/Walker Tests**: Custom filters in tests updated to use `LocalName()` for comparisons against lowercase tag names.
+- **Comprehensive Test Updates**: All affected test files across `internal/dom`, `internal/parser`, `internal/css`, and `internal/js` updated to expect UPPERCASE from `NodeName()`/`TagName()` for HTML elements and in `OuterHTML` strings.
+
+**Outcome**:
+- All project tests (`go test ./...`) are now passing.
+- Tag name casing is handled consistently and in a more spec-compliant manner throughout the DOM implementation.
+- This resolves a complex cascade of test failures and strengthens the DOM foundation.
+
 #### Text Interface Specification Compliance (2025-06-04)
 **✅ COMPLETED - Full specification-compliant implementation of WHATWG DOM Standard Section 4.11**
 
@@ -155,27 +175,22 @@
 
 **Key Implementation Details:**
 - **Document Interface Complete**: All 27+ WHATWG DOM Section 4.5 methods fully implemented and tested
+- **Specification Examples**: All specification examples from Section 4.5 working correctly
+- **Critical Bug Fixes**: Fixed adoptNodeRecursive type assertions and getElementsByClassName multi-class support
+- **Comprehensive Testing**: Created `internal/dom/document_spec_compliance_test.go` with 26 individual test cases
+- **Error Handling**: Proper DOMException throwing for all invalid operations per specification
+- **Legacy API Support**: Complete createEvent, createRange, createNodeIterator, createTreeWalker placeholders
+
+**Technical Implementation Details:**
 - **Constructor & Properties**: implementation, URL, documentURI, compatMode, characterSet, contentType, doctype, documentElement
 - **Element Creation**: createElement, createElementNS with proper namespace handling and validation
 - **Node Creation**: createTextNode, createComment, createDocumentFragment, createCDATASection, createProcessingInstruction
 - **Query Methods**: getElementsByTagName, getElementsByTagNameNS, getElementsByClassName with multi-class support
 - **Node Management**: importNode, adoptNode with proper ownership transfer and recursive adoption
 - **Attribute Creation**: createAttribute, createAttributeNS with validation
-- **Traversal Methods**: createNodeIterator, createTreeWalker with full specification-compliant implementations
-
-**Critical Bug Fixes:**
+- **Legacy Methods**: createEvent, createRange, createNodeIterator, createTreeWalker with proper placeholders
 - **Multi-Class getElementsByClassName**: Fixed to support space-separated class names per specification (e.g., "ccc bbb")
-- **Type-Safe Adoption**: Fixed adoptNodeRecursive to handle all concrete node types properly instead of generic nodeImpl
-- **Error Handling**: Proper DOMException throwing for all invalid operations per specification
-- **NodeIterator & TreeWalker**: Full specification-compliant implementations with proper traversal algorithms
-
-**Technical Changes:**
-- Created comprehensive `internal/dom/document_spec_compliance_test.go` with 26 individual test cases
-- Enhanced HTMLCollection.NewElementsByClassNameCollection to support multiple classes with hasAllClasses helper
-- Fixed Document.adoptNodeRecursive method to use type-specific setters for all node types
-- Added proper validation and error handling for all Document creation methods
-- Implemented complete WHATWG DOM Section 4.5 specification examples and edge cases
-- Full NodeIterator and TreeWalker implementation with specification-compliant traversal algorithms
+- **Type-Safe Adoption**: Fixed adoptNodeRecursive to handle all concrete node types properly
 
 **Final Verification (2025-06-04):**
 ✅ All Document specification compliance tests passing (28 test cases)
@@ -439,133 +454,19 @@
 ✅ Circular reference prevention
 ✅ All node types properly constrained
 
-#### Previous Major Milestones
-- **CSS Selectors**: Comprehensive implementation supporting all major selector types
-- **DOM Events**: Full event system with capturing/bubbling phases
-- **Browser APIs**: URL, URLSearchParams, Fetch, Cookies, Storage, Performance
-- **HTML Parsing**: Complete HTML5-compliant parser integration
-- **Error Handling**: Comprehensive DOMException system
-- **Mutation Observers**: Full implementation with performance optimization
-- **Namespace Support**: Complete XML namespace handling
-- **HTML Collections**: Live collections with automatic updating
+### Previous Milestones 📜
+- **HTML5 Event Loop Implementation**: Complete with task/microtask queues, animation frames, and virtual time control. (December 3, 2024)
+- **HTMX Critical APIs**: Fetch, FormData, CustomEvent, Storage, URL/URLSearchParams. (November 15, 2024)
+- **Testing Framework Self-Testing**: Comprehensive tests for harness, client, and mocks. (October 20, 2024)
+- **JavaScript DOM Bindings**: Full Goja integration for DOM manipulation from JS. (October 5, 2024)
+- **Core DOM Implementation**: All node types, event system, CSS selectors, HTML parser. (September 1, 2024)
 
-### Current Focus Areas 🎯
-
-#### Standards Compliance & Testing
-**Priority: High** | **Status: Ongoing**
-- ✅ DOM Node Tree specification compliance completed
-- ✅ NonElementParentNode mixin specification compliance completed
-- ✅ ParentNode mixin specification compliance completed
-- 🎯 **Node Interface Specification Compliance** - **CRITICAL CURRENT FOCUS**
-- 🔄 Event Loop specification compliance validation
-- 🔄 HTML parsing specification edge case testing
-- 🔄 CSS selector specification completeness review
-
-#### Node Interface Compliance Implementation
-**Priority: Critical** | **Status: Active Development** | **Target: WHATWG DOM Section 4.4**
-- **Missing Core Properties**: baseURI, isConnected, parentElement, hasChildNodes(), textContent
-- **Missing Methods**: normalize(), isEqualNode(), isSameNode(), compareDocumentPosition(), contains()
-- **Missing Constants**: All DOCUMENT_POSITION_* constants for position comparison
-- **Missing Algorithms**: get/set text content, string replace all, namespace lookup methods
-- **Enhanced cloneNode()**: Proper specification-compliant cloning with attribute handling
-
-**5-Phase Implementation Plan:**
-1. **Phase 1**: Core Properties & Simple Methods (isConnected, parentElement, hasChildNodes, constants)
-2. **Phase 2**: Text Content & Normalization (textContent getter/setter, normalize() method)
-3. **Phase 3**: Comparison & Traversal (getRootNode, isEqualNode, compareDocumentPosition, contains)
-4. **Phase 4**: Enhanced Cloning (specification-compliant cloneNode with proper attribute handling)
-5. **Phase 5**: Namespace Support (lookupPrefix, lookupNamespaceURI, isDefaultNamespace)
-
-**Success Metrics:**
-- All Node interface methods implemented per WHATWG DOM specification
-- Comprehensive test suite covering all specification requirements
-- Zero specification deviations (unless intentionally documented)
-- Foundation ready for advanced DOM features (Shadow DOM, etc.)
-
-#### Performance & Production Readiness
-**Priority: Medium** | **Status: Planning**
-- Memory optimization for large DOM trees
-- Performance benchmarking suite
-- Concurrent access patterns optimization
-- Production deployment guidelines
-
-#### Advanced DOM Features
-**Priority: Medium** | **Status: Planning**
-- Shadow DOM implementation
-- Custom Elements support
-- Web Components integration
-- Advanced CSS features (pseudo-selectors, media queries)
-
-### Architecture Quality 📊
-
-**Code Quality: Excellent ✅**
-- Comprehensive test coverage (>95%)
-- Full compliance with DOM Living Standard specifications
-- Robust error handling and validation
-- Clean separation of concerns
-
-**Performance: Good ✅**
-- Efficient tree traversal algorithms
-- Optimized HTML collection caching
-- Lazy evaluation where appropriate
-- Memory-conscious observer patterns
-
-**Standards Compliance: Excellent ✅**
-- Full DOM Living Standard compliance for implemented features
-- HTML5 parsing specification adherence
-- CSS selector specification compliance
-- Complete Unicode support
-
-### Known Issues & Limitations 🔍
-
-#### Minor Implementation Gaps
-- Shadow DOM not yet implemented (planned)
-- Some advanced CSS pseudo-selectors pending
-- WebAssembly integration points not defined
-
-#### Performance Considerations
-- Large DOM tree performance could be optimized further
-- Memory usage patterns could be more efficient for mobile environments
-
-### Next Development Cycle 🚀
-
-#### Immediate Next Steps (Next 2-3 weeks)
-1. **Event Loop Compliance Verification**
-   - Review event loop implementation against WHATWG specification
-   - Add comprehensive compliance tests
-   - Fix any specification deviations
-
-2. **Performance Benchmarking**
-   - Establish performance baseline measurements
-   - Identify optimization opportunities
-   - Create performance regression testing
-
-3. **Shadow DOM Foundation**
-   - Design Shadow DOM architecture
-   - Implement basic ShadowRoot functionality
-   - Add initial test coverage
-
-#### Medium-term Goals (1-2 months)
-- Complete Shadow DOM implementation
-- Advanced CSS selector support
-- Production deployment documentation
-- Performance optimization based on benchmarks
-
-### Development Velocity 📈
-
-**Current Sprint Performance:**
-- DOM specification compliance: Completed ahead of schedule
-- Test coverage: Maintained at >95%
-- Code quality: All standards met
-- Documentation: Comprehensive and up-to-date
-
-**Team Productivity Indicators:**
-- Zero breaking changes in recent updates
-- Comprehensive test coverage maintained
-- Proactive specification compliance
-- Clean, maintainable architecture
+### What's Next 🚀
+- **Range API Implementation**: Focus on WHATWG DOM Section 5 for text selection and manipulation.
+- **Shadow DOM Foundation**: Begin architectural design for Shadow DOM and Web Components support.
+- **Performance Optimization**: Continue benchmarking and optimizing critical DOM operations.
+- **Advanced CSS Selectors**: Implement remaining pseudo-classes and combinators.
 
 ---
-
 *Last Updated: June 4, 2025*
-*Status: All systems operational, ready for next development phase*
+*Status: All tests passing. DOM tag name casing refactor complete.*

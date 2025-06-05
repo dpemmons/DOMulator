@@ -124,36 +124,49 @@ func cloneSingleNode(node Node, document *Document, fallbackRegistry interface{}
 // cloneElement implements element-specific cloning logic
 func cloneElement(elem *Element, document *Document, fallbackRegistry interface{}) Node {
 	// TODO: Handle custom element registry when implemented
-	// For now, use the basic element creation
 
 	var copy *Element
 	var err error
 
-	// Create element with proper namespace support
-	if elem.namespaceURI != "" {
-		copy, err = NewElementNS(elem.namespaceURI, elem.tagName, document)
+	// Determine the name to use for creation.
+	// For HTML elements (or elements in no namespace that are treated as HTML),
+	// NewElement expects the lowercase tag name, and it will handle uppercasing for nodeName/tagName.
+	// For other namespaced elements, NewElementNS expects the qualified name.
+	if elem.NamespaceURI() != "" && elem.NamespaceURI() != htmlNamespace {
+		// Non-HTML namespaced element: use its tagName (qualified name)
+		copy, err = NewElementNS(elem.NamespaceURI(), elem.TagName(), document)
 		if err != nil {
-			// Fallback to basic element creation
-			copy = NewElement(elem.tagName, document)
+			// This is a more serious error if a namespaced element cannot be cloned with its namespace.
+			// Depending on desired strictness, this could panic or attempt a less accurate fallback.
+			// For now, we'll let it proceed, but NewElementNS failing is problematic.
+			// A simple fallback might be: copy = NewElement(elem.LocalName(), document)
+			// but this loses namespace. The original code had a fallback to NewElement(elem.tagName)
+			// which is also not ideal for namespaced elements if elem.tagName was just localName.
+			// Sticking to NewElementNS and letting error propagate or be handled is better.
+			// If NewElementNS fails, the resulting 'copy' might be nil or an imperfect clone.
+			// The panic below is a placeholder for more robust error handling.
+			panic(fmt.Sprintf("failed to clone namespaced element %s with namespace %s: %v", elem.TagName(), elem.NamespaceURI(), err))
 		}
 	} else {
-		copy = NewElement(elem.tagName, document)
+		// HTML element (or no namespace, treated as HTML by NewElement):
+		// Pass the localName (which is lowercase) to NewElement.
+		// NewElement is responsible for setting nodeName and tagName to uppercase for HTML elements.
+		copy = NewElement(elem.LocalName(), document)
 	}
 
-	// Ensure the copy has the same nodeName as the original
-	copy.nodeName = elem.nodeName
-
-	// Copy namespace information
-	copy.namespaceURI = elem.namespaceURI
-	copy.prefix = elem.prefix
-	copy.localName = elem.localName
-
-	// For each attribute of node's attribute list:
-	// Let copyAttribute be the result of cloning a single node given attribute, document, and null
-	// Append copyAttribute to copy
+	// Attributes are copied directly.
+	// Namespace handling for attributes (e.g., xlink:href) would require Attr nodes
+	// to be fully namespace-aware and cloned as such.
+	// The current SetAttribute/GetAttribute on Element are simple string maps.
 	for name, value := range elem.attributes {
 		copy.SetAttribute(name, value)
 	}
+
+	// Note: The fields like copy.nodeName, copy.tagName, copy.localName, copy.namespaceURI, copy.prefix
+	// are set by NewElement or NewElementNS. We don't need to copy them manually here after creation
+	// if those constructors do their job correctly based on the input name and namespace.
+	// The original code had manual copying of these, which might be redundant or conflict
+	// if NewElement/NewElementNS already set them based on their input.
 
 	return copy
 }

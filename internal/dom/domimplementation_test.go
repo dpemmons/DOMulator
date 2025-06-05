@@ -270,24 +270,24 @@ func TestDOMImplementation_CreateHTMLDocument(t *testing.T) {
 		documentElement := htmlDoc.DocumentElement()
 		if documentElement == nil {
 			t.Errorf("Expected document element")
-		} else if documentElement.TagName() != "html" {
-			t.Errorf("Expected document element tag name 'html', got %q", documentElement.TagName())
+		} else if documentElement.TagName() != "HTML" { // Expect uppercase
+			t.Errorf("Expected document element tag name 'HTML', got %q", documentElement.TagName())
 		}
 
 		// Verify head element
 		head := htmlDoc.Head()
 		if head == nil {
 			t.Errorf("Expected head element")
-		} else if head.TagName() != "head" {
-			t.Errorf("Expected head element tag name 'head', got %q", head.TagName())
+		} else if head.TagName() != "HEAD" { // Expect uppercase
+			t.Errorf("Expected head element tag name 'HEAD', got %q", head.TagName())
 		}
 
 		// Verify body element
 		body := htmlDoc.Body()
 		if body == nil {
 			t.Errorf("Expected body element")
-		} else if body.TagName() != "body" {
-			t.Errorf("Expected body element tag name 'body', got %q", body.TagName())
+		} else if body.TagName() != "BODY" { // Expect uppercase
+			t.Errorf("Expected body element tag name 'BODY', got %q", body.TagName())
 		}
 
 		// Should have no title element

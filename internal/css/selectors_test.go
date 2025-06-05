@@ -209,15 +209,15 @@ func TestQuerySelector(t *testing.T) {
 		selector string
 		expected string // NodeName of the expected node
 	}{
-		{"Select HTML", doc, "html", "html"},
-		{"Select Body", doc, "body", "body"},
-		{"Select Container by ID", doc, "#container", "div"},
-		{"Select First P", doc, "p", "p"},
-		{"Select Highlight Span", doc, "span.highlight", "span"},
-		{"Select Active Item Div", doc, "div.active", "div"},
-		{"Select Link", doc, "a.link", "a"},
+		{"Select HTML", doc, "html", "HTML"},
+		{"Select Body", doc, "body", "BODY"},
+		{"Select Container by ID", doc, "#container", "DIV"},
+		{"Select First P", doc, "p", "P"},
+		{"Select Highlight Span", doc, "span.highlight", "SPAN"},
+		{"Select Active Item Div", doc, "div.active", "DIV"},
+		{"Select Link", doc, "a.link", "A"},
 		{"Non-existent selector", doc, "h1", ""},
-		{"Select from Element Root", doc.ChildNodes().Item(0).(*dom.Element).ChildNodes().Item(1).(*dom.Element).ChildNodes().Item(0).(*dom.Element), "p.text-content", "p"}, // From #container, select p
+		{"Select from Element Root", doc.ChildNodes().Item(0).(*dom.Element).ChildNodes().Item(1).(*dom.Element).ChildNodes().Item(0).(*dom.Element), "p.text-content", "P"}, // From #container, select p
 	}
 
 	for _, tt := range tests {
@@ -247,13 +247,13 @@ func TestQuerySelectorAll(t *testing.T) {
 		selector string
 		expected []string // NodeNames of the expected nodes
 	}{
-		{"Select All Divs", doc, "div", []string{"div", "div", "div"}},
-		{"Select All P", doc, "p", []string{"p", "p"}},
-		{"Select All Items", doc, ".item", []string{"div", "div"}},
-		{"Select All Text Content Paragraphs", doc, "p.text-content", []string{"p", "p"}},
-		{"Select All Spans", doc, "span", []string{"span"}},
+		{"Select All Divs", doc, "div", []string{"DIV", "DIV", "DIV"}},
+		{"Select All P", doc, "p", []string{"P", "P"}},
+		{"Select All Items", doc, ".item", []string{"DIV", "DIV"}},
+		{"Select All Text Content Paragraphs", doc, "p.text-content", []string{"P", "P"}},
+		{"Select All Spans", doc, "span", []string{"SPAN"}},
 		{"Non-existent selector", doc, "h1", []string{}},
-		{"Select All from Element Root", doc.ChildNodes().Item(0).(*dom.Element).ChildNodes().Item(1).(*dom.Element).ChildNodes().Item(0).(*dom.Element), "p", []string{"p", "p"}}, // From #container, select all p
+		{"Select All from Element Root", doc.ChildNodes().Item(0).(*dom.Element).ChildNodes().Item(1).(*dom.Element).ChildNodes().Item(0).(*dom.Element), "p", []string{"P", "P"}}, // From #container, select all p
 	}
 
 	for _, tt := range tests {

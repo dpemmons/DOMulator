@@ -108,12 +108,12 @@ func TestElementCreation(t *testing.T) {
 			throw new Error('element.nodeType should be 1');
 		}
 		
-		if (div.tagName !== 'div') {
-			throw new Error('element.tagName should be div');
+		if (div.tagName !== 'DIV') { // Expect uppercase
+			throw new Error('element.tagName should be DIV');
 		}
 		
-		if (div.nodeName !== 'div') {
-			throw new Error('element.nodeName should be div');
+		if (div.nodeName !== 'DIV') { // Expect uppercase
+			throw new Error('element.nodeName should be DIV');
 		}
 	`)
 	if err != nil {
@@ -235,8 +235,8 @@ func TestDOMWithParser(t *testing.T) {
 			throw new Error('getElementById should find the main div');
 		}
 		
-		if (mainDiv.tagName !== 'div') {
-			throw new Error('Found element should be a div');
+		if (mainDiv.tagName !== 'DIV') { // Expect uppercase
+			throw new Error('Found element should be a DIV');
 		}
 		
 		if (mainDiv.getAttribute('id') !== 'main') {

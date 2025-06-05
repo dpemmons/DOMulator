@@ -90,7 +90,7 @@ func testTreeWalkerParentNodeAlgorithm(t *testing.T) {
 
 	// Test with rejecting filter
 	rejectFilter := NodeFilterFunc(func(node Node) int {
-		if elem, ok := node.(*Element); ok && elem.TagName() == "span" {
+		if elem, ok := node.(*Element); ok && elem.LocalName() == "span" { // Use LocalName
 			return NodeFilterReject
 		}
 		return NodeFilterAccept
@@ -138,7 +138,7 @@ func testTreeWalkerTraverseChildrenAlgorithm(t *testing.T) {
 
 	// Test with SKIP filter - should traverse into skipped nodes
 	skipFilter := NodeFilterFunc(func(node Node) int {
-		if elem, ok := node.(*Element); ok && elem.TagName() == "span" {
+		if elem, ok := node.(*Element); ok && elem.LocalName() == "span" { // Use LocalName
 			return NodeFilterSkip
 		}
 		return NodeFilterAccept
@@ -152,7 +152,7 @@ func testTreeWalkerTraverseChildrenAlgorithm(t *testing.T) {
 
 	// Test with REJECT filter - should not traverse into rejected nodes
 	rejectFilter := NodeFilterFunc(func(node Node) int {
-		if elem, ok := node.(*Element); ok && elem.TagName() == "span" {
+		if elem, ok := node.(*Element); ok && elem.LocalName() == "span" { // Use LocalName
 			return NodeFilterReject
 		}
 		return NodeFilterAccept
@@ -220,7 +220,7 @@ func testTreeWalkerTraverseSiblingsAlgorithm(t *testing.T) {
 
 	// Test with SKIP filter that descends into children
 	skipFilter := NodeFilterFunc(func(node Node) int {
-		if elem, ok := node.(*Element); ok && elem.TagName() == "p" {
+		if elem, ok := node.(*Element); ok && elem.LocalName() == "p" { // Use LocalName
 			return NodeFilterSkip
 		}
 		return NodeFilterAccept
@@ -277,7 +277,7 @@ func testTreeWalkerPreviousNodeAlgorithm(t *testing.T) {
 
 	// Test with REJECT filter
 	rejectFilter := NodeFilterFunc(func(node Node) int {
-		if elem, ok := node.(*Element); ok && elem.TagName() == "span" {
+		if elem, ok := node.(*Element); ok && elem.LocalName() == "span" { // Use LocalName
 			return NodeFilterReject
 		}
 		return NodeFilterAccept
@@ -339,7 +339,7 @@ func testTreeWalkerNextNodeAlgorithm(t *testing.T) {
 
 	// Test with REJECT filter
 	rejectFilter := NodeFilterFunc(func(node Node) int {
-		if elem, ok := node.(*Element); ok && elem.TagName() == "span" {
+		if elem, ok := node.(*Element); ok && elem.LocalName() == "span" { // Use LocalName
 			return NodeFilterReject
 		}
 		return NodeFilterAccept
@@ -368,7 +368,7 @@ func testTreeWalkerFilterRejectVsSkip(t *testing.T) {
 
 	// Test SKIP behavior - should traverse into children
 	skipFilter := NodeFilterFunc(func(node Node) int {
-		if elem, ok := node.(*Element); ok && elem.TagName() == "target" {
+		if elem, ok := node.(*Element); ok && elem.LocalName() == "target" { // Use LocalName
 			return NodeFilterSkip
 		}
 		return NodeFilterAccept
@@ -383,7 +383,7 @@ func testTreeWalkerFilterRejectVsSkip(t *testing.T) {
 
 	// Test REJECT behavior - should not traverse into children
 	rejectFilter := NodeFilterFunc(func(node Node) int {
-		if elem, ok := node.(*Element); ok && elem.TagName() == "target" {
+		if elem, ok := node.(*Element); ok && elem.LocalName() == "target" { // Use LocalName
 			return NodeFilterReject
 		}
 		return NodeFilterAccept
@@ -405,7 +405,7 @@ func testTreeWalkerRootNodeFiltering(t *testing.T) {
 
 	// Create filter that would reject the root
 	rejectRootFilter := NodeFilterFunc(func(node Node) int {
-		if elem, ok := node.(*Element); ok && elem.TagName() == "div" {
+		if elem, ok := node.(*Element); ok && elem.LocalName() == "div" { // Use LocalName
 			return NodeFilterReject
 		}
 		return NodeFilterAccept
@@ -450,7 +450,7 @@ func testTreeWalkerComplexTraversalPatterns(t *testing.T) {
 	// Test complex filter that skips some and rejects others
 	complexFilter := NodeFilterFunc(func(node Node) int {
 		if elem, ok := node.(*Element); ok {
-			switch elem.TagName() {
+			switch elem.LocalName() { // Use LocalName
 			case "level1a":
 				return NodeFilterSkip // Skip but traverse children
 			case "level2b":

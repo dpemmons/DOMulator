@@ -241,14 +241,16 @@ func testDocumentCreateElement(t *testing.T) {
 	if elem == nil {
 		t.Error("Expected CreateElement to return an element")
 	}
-	if elem.TagName() != "div" {
-		t.Errorf("Expected tagName to be 'div', got %s", elem.TagName())
+	if elem.TagName() != "DIV" { // Expect uppercase for HTML elements
+		t.Errorf("Expected tagName to be 'DIV', got %s", elem.TagName())
 	}
 
-	// Test HTML document lowercasing
-	doc.documentType = "html"
-	elem = doc.CreateElement("DIV")
-	if elem.TagName() != "DIV" { // Note: TagName() returns the original case, but internally it's lowercased
+	// Test HTML document lowercasing (input is uppercased by parser, then uppercased by NewElement for HTML)
+	// The parser now provides lowercase "div" to NewElement.
+	// NewElement then converts it to "DIV" for TagName() for HTML elements.
+	doc.documentType = "html"       // This field influences some behaviors, ensure it's set if relevant
+	elem = doc.CreateElement("DIV") // Parser will lowercase this to "div" before NewElement sees it
+	if elem.TagName() != "DIV" {
 		t.Errorf("Expected tagName to be 'DIV', got %s", elem.TagName())
 	}
 }
@@ -492,16 +494,21 @@ func testDocumentCreateRange(t *testing.T) {
 		t.Error("Expected CreateRange to return a range object")
 	}
 
-	// Should be a map with expected properties
-	if rangeMap, ok := range_.(map[string]interface{}); ok {
-		if rangeMap["startContainer"] != doc {
-			t.Error("Expected range startContainer to be the document")
-		}
-		if rangeMap["collapsed"] != true {
-			t.Error("Expected range to be collapsed")
-		}
-	} else {
-		t.Error("Expected CreateRange to return a map")
+	// Test range properties per specification
+	if range_.StartContainer() == nil {
+		t.Error("Expected range to have a startContainer")
+	}
+	if range_.StartOffset() != 0 {
+		t.Errorf("Expected range startOffset to be 0, got %d", range_.StartOffset())
+	}
+	if range_.EndContainer() == nil {
+		t.Error("Expected range to have an endContainer")
+	}
+	if range_.EndOffset() != 0 {
+		t.Errorf("Expected range endOffset to be 0, got %d", range_.EndOffset())
+	}
+	if !range_.Collapsed() {
+		t.Error("Expected new range to be collapsed")
 	}
 }
 

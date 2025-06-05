@@ -35,8 +35,8 @@ func TestDocumentCreateElement(t *testing.T) {
 	if div.NodeType() != ElementNode {
 		t.Errorf("Expected element node type, got %v", div.NodeType())
 	}
-	if div.TagName() != "div" {
-		t.Errorf("Expected tag name 'div', got %s", div.TagName())
+	if div.TagName() != "DIV" { // Expect uppercase
+		t.Errorf("Expected tag name 'DIV', got %s", div.TagName())
 	}
 	if div.OwnerDocument() != doc {
 		t.Errorf("Expected owner document to match")
@@ -45,11 +45,11 @@ func TestDocumentCreateElement(t *testing.T) {
 		t.Errorf("Expected new element to have no parent")
 	}
 
-	if span.TagName() != "span" {
-		t.Errorf("Expected tag name 'span', got %s", span.TagName())
+	if span.TagName() != "SPAN" { // Expect uppercase
+		t.Errorf("Expected tag name 'SPAN', got %s", span.TagName())
 	}
-	if input.TagName() != "input" {
-		t.Errorf("Expected tag name 'input', got %s", input.TagName())
+	if input.TagName() != "INPUT" { // Expect uppercase
+		t.Errorf("Expected tag name 'INPUT', got %s", input.TagName())
 	}
 
 	// Test that elements are independent

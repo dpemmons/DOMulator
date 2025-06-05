@@ -78,13 +78,13 @@ func TestElementWrapping(t *testing.T) {
 	}
 
 	tagName := elemJS.Get("tagName").String()
-	if tagName != "div" {
-		t.Errorf("Expected tagName 'div', got '%s'", tagName)
+	if tagName != "DIV" { // Expect uppercase for HTML elements
+		t.Errorf("Expected tagName 'DIV', got '%s'", tagName)
 	}
 
 	nodeName := elemJS.Get("nodeName").String()
-	if nodeName != "div" {
-		t.Errorf("Expected nodeName 'div', got '%s'", nodeName)
+	if nodeName != "DIV" { // Expect uppercase for HTML elements (nodeName mirrors tagName for elements)
+		t.Errorf("Expected nodeName 'DIV', got '%s'", nodeName)
 	}
 
 	// Test innerHTML/outerHTML properties exist
@@ -386,8 +386,8 @@ func TestNodeListWrapping(t *testing.T) {
 
 	// Verify it's the wrapped version of our first element
 	tagName := firstElement.ToObject(vm).Get("tagName").String()
-	if tagName != "div" {
-		t.Errorf("Expected first element tagName 'div', got '%s'", tagName)
+	if tagName != "DIV" { // Expect uppercase for HTML elements
+		t.Errorf("Expected first element tagName 'DIV', got '%s'", tagName)
 	}
 }
 
@@ -513,8 +513,8 @@ func TestDocumentMethodsWithParser(t *testing.T) {
 		t.Fatalf("getElementById test failed: %v", err)
 	}
 
-	if result.String() != "div" {
-		t.Errorf("getElementById should find div element, got '%s'", result.String())
+	if result.String() != "DIV" { // Expect uppercase for HTML elements
+		t.Errorf("getElementById should find div element, got 'DIV', actual: '%s'", result.String())
 	}
 
 	// Test getElementsByClassName
@@ -649,10 +649,10 @@ func TestInsertAdjacentHTMLInJS(t *testing.T) {
 
 	// Verify DOM was modified
 	children := container.ChildNodes()
-	if len(children) != 2 {
-		t.Errorf("Expected 2 children after beforebegin, got %d", len(children))
+	if children.Length() != 2 {
+		t.Errorf("Expected 2 children after beforebegin, got %d", children.Length())
 	}
-	if children[0].NodeType() != dom.TextNode || children[0].NodeValue() != "Hello" {
+	if children.Item(0).NodeType() != dom.TextNode || children.Item(0).NodeValue() != "Hello" {
 		t.Errorf("Expected first child to be text node 'Hello'")
 	}
 
@@ -664,10 +664,10 @@ func TestInsertAdjacentHTMLInJS(t *testing.T) {
 
 	// Verify target has children
 	targetChildren := target.ChildNodes()
-	if len(targetChildren) != 2 {
-		t.Errorf("Expected 2 children in target after afterbegin, got %d", len(targetChildren))
+	if targetChildren.Length() != 2 { // Adjusted from 1 to 2, original text + new em
+		t.Errorf("Expected 2 children in target after afterbegin, got %d", targetChildren.Length())
 	}
-	if targetChildren[0].NodeType() != dom.ElementNode {
+	if targetChildren.Item(0).NodeType() != dom.ElementNode { // The new <em> should be first
 		t.Errorf("Expected first child to be element node")
 	}
 
@@ -677,10 +677,10 @@ func TestInsertAdjacentHTMLInJS(t *testing.T) {
 		t.Fatalf("insertAdjacentHTML beforeend failed: %v", err)
 	}
 
-	// Verify target now has 3 children
+	// Verify target now has 3 children (em, original text, strong)
 	targetChildren = target.ChildNodes()
-	if len(targetChildren) != 3 {
-		t.Errorf("Expected 3 children in target after beforeend, got %d", len(targetChildren))
+	if targetChildren.Length() != 3 {
+		t.Errorf("Expected 3 children in target after beforeend, got %d", targetChildren.Length())
 	}
 
 	// Test afterend position
@@ -689,10 +689,10 @@ func TestInsertAdjacentHTMLInJS(t *testing.T) {
 		t.Fatalf("insertAdjacentHTML afterend failed: %v", err)
 	}
 
-	// Verify container now has 3 children
+	// Verify container now has 3 children (Hello, target, World)
 	children = container.ChildNodes()
-	if len(children) != 3 {
-		t.Errorf("Expected 3 children in container after afterend, got %d", len(children))
+	if children.Length() != 3 {
+		t.Errorf("Expected 3 children in container after afterend, got %d", children.Length())
 	}
 
 	// Test error handling - invalid position
@@ -759,17 +759,17 @@ func TestInsertAdjacentHTMLComplexHTML(t *testing.T) {
 	}
 
 	children := target.ChildNodes()
-	if len(children) != 1 {
-		t.Errorf("Expected 1 child after complex HTML insertion, got %d", len(children))
+	if children.Length() != 1 {
+		t.Errorf("Expected 1 child after complex HTML insertion, got %d", children.Length())
 	}
 
-	if children[0].NodeType() != dom.ElementNode {
+	if children.Item(0).NodeType() != dom.ElementNode {
 		t.Errorf("Expected child to be element node")
 	}
 
-	child := children[0].(*dom.Element)
-	if child.TagName() != "div" {
-		t.Errorf("Expected child tag name 'div', got '%s'", child.TagName())
+	child := children.Item(0).(*dom.Element)
+	if child.TagName() != "DIV" { // Expect uppercase from Go's TagName method now
+		t.Errorf("Expected child tag name 'DIV', got '%s'", child.TagName())
 	}
 
 	if child.GetAttribute("class") != "test" {
@@ -787,12 +787,12 @@ func TestInsertAdjacentHTMLComplexHTML(t *testing.T) {
 	}
 
 	children = target.ChildNodes()
-	if len(children) != 2 {
-		t.Errorf("Expected 2 children after self-closing element insertion, got %d", len(children))
+	if children.Length() != 2 {
+		t.Errorf("Expected 2 children after self-closing element insertion, got %d", children.Length())
 	}
 
-	input := children[1].(*dom.Element)
-	if input.TagName() != "input" {
+	input := children.Item(1).(*dom.Element)
+	if input.TagName() != "INPUT" { // Expect uppercase from Go's TagName method now
 		t.Errorf("Expected input element, got '%s'", input.TagName())
 	}
 

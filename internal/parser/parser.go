@@ -46,7 +46,8 @@ func (p *Parser) convertNode(htmlNode *html.Node, parent dom.Node) {
 
 	case html.ElementNode:
 		// Create DOM element
-		elem := dom.NewElement(htmlNode.Data, p.doc)
+		tagName := strings.ToLower(htmlNode.Data)
+		elem := dom.NewElement(tagName, p.doc)
 
 		// Copy attributes
 		for _, attr := range htmlNode.Attr {
@@ -125,7 +126,8 @@ func (p *Parser) convertNodeToDOM(htmlNode *html.Node, doc *dom.Document) dom.No
 	switch htmlNode.Type {
 	case html.ElementNode:
 		// Create DOM element
-		elem := dom.NewElement(htmlNode.Data, doc)
+		tagName := strings.ToLower(htmlNode.Data)
+		elem := dom.NewElement(tagName, doc)
 
 		// Copy attributes
 		for _, attr := range htmlNode.Attr {

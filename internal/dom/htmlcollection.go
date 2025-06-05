@@ -163,7 +163,17 @@ func (hc *HTMLCollection) buildCacheRecursive(node Node, isRoot bool) {
 func NewElementsByTagNameCollection(root Node, tagName string) *HTMLCollection {
 	filter := func(node Node) bool {
 		if elem, ok := node.(*Element); ok {
-			return elem.TagName() == tagName || tagName == "*"
+			if tagName == "*" {
+				return true
+			}
+			// For HTML documents, tag name matching is case-insensitive.
+			// Element.TagName() returns uppercase for HTML elements.
+			// Element.LocalName() returns lowercase.
+			// The input tagName is typically lowercase.
+			// Using strings.EqualFold is robust.
+			// Alternatively, if we assume HTML context and lowercase input:
+			// return elem.LocalName() == tagName
+			return strings.EqualFold(elem.TagName(), tagName)
 		}
 		return false
 	}

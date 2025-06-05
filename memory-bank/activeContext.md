@@ -1,5 +1,54 @@
 # Active Context: DOMulator Development
 
+## ✅ MAJOR MILESTONE ACHIEVED: DOM Tag Name Casing Consistency & Full Test Suite Pass! 🎉
+
+### 🚀 **TAG NAME CASING REFACTOR COMPLETED - June 4, 2025** - **100% Test Suite Pass ACHIEVED!** 🎯
+
+**Status**: 🎉 **COMPLETED** - Resolved widespread test failures by ensuring consistent and specification-compliant handling of HTML element tag name casing across the entire DOMulator framework. All project tests (`go test ./...`) are now passing.
+
+**Achievement Summary:**
+- ✅ **Consistent Casing**: `Node.NodeName()` and `Element.TagName()` now reliably return **UPPERCASE** for HTML elements, aligning with DOM specifications. `Element.LocalName()` consistently returns **lowercase**.
+- ✅ **Parser Alignment**: The HTML parser (`internal/parser/parser.go`) now ensures it provides lowercase tag names to the `dom.NewElement` constructor.
+- ✅ **Element Creation Logic**:
+    - `dom.NewElement` (in `internal/dom/element.go`) correctly processes the lowercase input tag name. It sets `localName` to this lowercase value. For HTML elements (identified by being in the HTML namespace or being a known HTML tag type in no namespace), it sets `nodeImpl.nodeName` and the `Element.tagName` field to the **UPPERCASE** version.
+    - `Document.CreateElementNS` (in `internal/dom/document.go`) now correctly handles elements in the HTML namespace. If creating an HTML element in an HTML document, it effectively uses the `CreateElement` logic, ensuring the resulting element has its `namespaceURI` set to `HTMLNamespace` and its `TagName()` returns the appropriate UPPERCASE name.
+- ✅ **Collection Method Fixes**: `Document.GetElementsByTagName` and `Element.GetElementsByTagName` (via `internal/dom/htmlcollection.go`) now use case-insensitive comparison (`strings.EqualFold`), correctly matching selectors like "div" against elements whose `TagName()` is "DIV".
+- ✅ **Cloning Logic**: Element cloning (`internal/dom/clone.go`) was updated. `cloneElement` now passes the original element's `LocalName()` (lowercase) to `NewElement` when cloning HTML elements. This allows `NewElement` to correctly apply its internal casing logic.
+- ✅ **Helper Method Adjustments**: Methods like `Document.Head()` and `Document.Body()` were updated to compare against uppercase tag names ("HEAD", "BODY").
+- ✅ **NodeFilter/Iterator/Walker Tests**: Custom filters in `nodefilter_*.go`, `nodeiterator_test.go`, and `treewalker_test.go` were updated to use `LocalName()` for comparisons against lowercase tag names, resolving filtering issues.
+- ✅ **Comprehensive Test Updates**: All affected test files across `internal/dom`, `internal/parser`, `internal/css`, and `internal/js` were updated. Assertions now correctly expect UPPERCASE from `NodeName()` and `TagName()` for HTML elements, and uppercase tags in `OuterHTML` strings.
+
+**Critical Implementation Details:**
+- Resolved a complex cascade of test failures that arose after initial fixes to `Range` tests.
+- Systematically analyzed and corrected tag name handling in core DOM object creation, methods, collections, cloning, and test assertions.
+- Ensured that the internal representation and public API for tag names (`NodeName`, `TagName`, `LocalName`) are consistent and adhere to DOM specification nuances (e.g., `tagName` IDL attribute being uppercase for HTML elements).
+
+**Files Modified:**
+- `internal/dom/element.go`
+- `internal/parser/parser.go`
+- `internal/dom/htmlcollection.go`
+- `internal/dom/clone.go`
+- `internal/dom/document.go`
+- `internal/dom/ranges/range_test.go` (initial fix)
+- `internal/dom/ranges/boundary.go` (getRoot fix)
+- `internal/parser/parser_test.go`
+- `internal/js/bindings_test.go`
+- `internal/css/selectors_test.go`
+- `internal/dom/domimplementation_test.go`
+- `internal/dom/document_test.go`
+- `internal/dom/element_test.go`
+- `internal/dom/parentnode_test.go`
+- `internal/js/runtime_test.go`
+- `internal/dom/nodefilter_spec_compliance_test.go`
+- `internal/dom/nodefilter_test.go`
+- `internal/dom/nodeiterator_test.go`
+- `internal/dom/treewalker_spec_compliance_test.go`
+- `internal/dom/treewalker_test.go`
+
+**Test Results**: All project tests passing ✅ (100% success rate after fixes)
+
+This major refactoring ensures a more robust and spec-compliant DOM foundation.
+
 ## ✅ MAJOR MILESTONE ACHIEVED: CharacterData Interfaces Specification Compliance Complete! 🎉
 
 ### 🚀 **CHARACTERDATA INTERFACES COMPLETED - June 4, 2025** - **100% WHATWG DOM Sections 4.11-4.14 Specification Compliance ACHIEVED!** 🎯
@@ -379,6 +428,7 @@ This completes WHATWG DOM Section 4.5.1 (DOMImplementation interface) with full 
 ✅ createProcessingInstruction validates target and data per specification
 ✅ getElementsByClassName handles multiple space-separated classes correctly
 ✅ importNode and adoptNode properly handle document/shadow root restrictions
+✅ createNodeIterator and createTreeWalker fully specification-compliant
 ✅ All error conditions throw correct DOMException types per specification
 ✅ All 26 specification compliance tests passing + 2 additional example tests passing
 
@@ -764,7 +814,7 @@ DOMulator now provides **95% coverage** for HTMX applications:
 - ✅ **HTTP/Fetch API**: ✅ **COMPLETE** - Full AJAX functionality with Promise support
 - ✅ **FormData API**: ✅ **COMPLETE** - Form submissions and multipart data handling
 - ✅ **CustomEvent**: ✅ **COMPLETE** - HTMX's event-driven architecture support
-- ✅ **Storage APIs**: ✅ **COMPLETE** - localStorage/sessionStorage for client-side data
+- ✅ **Storage APIs**: ✅ **COMPLETE** - localStorage/sessionStorage for state management
 - ✅ **URL/URLSearchParams**: ✅ **COMPLETE** - URL manipulation and query parameter handling
 - ✅ **DOM Insertion**: ✅ **COMPLETE** - insertAdjacentHTML for flexible content placement
 
@@ -841,218 +891,54 @@ The DOMulator framework is now **production-ready** with:
 - **Testing Framework**: Comprehensive testing harness
 - **All Core Tests Passing**: 100% success rate across all major components
 
-## ✅ **COMPLETED: Phase 3 - HTML5 Event Loop Implementation** 🎉
-
-### **🚀 Strategic Objective: 99% Modern Framework Compatibility - ACHIEVED!**
-✅ **COMPLETED** - Implemented a complete HTML5-compliant event loop achieving full compatibility with React, Vue, Angular, and other modern JavaScript frameworks that rely heavily on Promise-based async patterns and precise timing control.
-
-### **📊 Implementation Results - December 3, 2024**
-- ✅ **Foundation Complete**: DOM, CSS selectors, HTML parser, JavaScript runtime, Browser APIs
-- ✅ **HTMX Ready**: 95% compatibility achieved with all critical APIs implemented
-- ✅ **Event Loop Complete**: Full HTML5 event loop with task/microtask queues, animation frames, and render steps
-- ✅ **SPA Framework Ready**: Modern frameworks now 99% compatible with proper async behavior
-- ✅ **All Tests Passing**: 9/9 event loop tests passing - comprehensive validation complete
-
-### **🏗️ Implementation Plan: Phase 3 - HTML5 Event Loop**
-
-#### **🎯 Core Architectural Decisions**
-
-**Main Thread Architecture (Critical Decision)**:
-- **Single-threaded execution**: All event loop processing on main thread for Goja VM compatibility
-- **Deterministic testing**: Perfect control for test scenarios with no race conditions
-- **Spec compliance first**: HTML5 event loop algorithm implementation over performance optimization
-- **Test-driven development**: Build comprehensive tests alongside implementation
-- **Clean break**: No backwards compatibility with existing timer system
-
-#### **Phase 3A: Core Event Loop Foundation** (Week 1-2)
-**Package**: `internal/loop/` - Complete event loop infrastructure
-
-**Implementation Interdependencies** (Critical Path):
-```
-1. Core EventLoop struct ← Foundation for everything
-   ↓
-2. Task & Microtask Queues ← HTML5 algorithm core  
-   ↓
-3. ProcessEventLoopIteration() ← Main algorithm implementation
-   ↓
-4. Timing system ← Foundation for all scheduling
-   ↓
-5. Animation & Idle queues ← Can be parallel to #3-4
-   ↓
-6. Core tests ← Validate foundation before Phase 3B
-```
-
-**Deliverables**:
-```
-internal/loop/
-├── eventloop.go          # Main EventLoop struct and Run() method (BLOCKING)
-├── task.go              # Task definitions and TaskQueue (BLOCKING)
-├── microtask.go         # Microtask definitions and MicrotaskQueue (BLOCKING)
-├── timing.go            # Performance timing integration (BLOCKING)
-├── animation.go         # Animation frame queue and timing (PARALLEL)
-├── idle.go              # Idle callback support (PARALLEL)
-└── eventloop_test.go    # Comprehensive test suite (CONTINUOUS)
-```
-
-**Core Components** (Main Thread Architecture):
-```go
-type EventLoop struct {
-    // Core queues (single-threaded, no goroutines)
-    taskQueue         *TaskQueue
-    microtaskQueue    *MicrotaskQueue
-    animationQueue    *AnimationQueue
-    idleQueue         *IdleQueue
-    
-    // Single-threaded execution
-    vm                *goja.Runtime     // All access on main thread
-    document          *dom.Document
-    
-    // State management (no atomic operations needed)
-    running           bool
-    renderingEnabled  bool
-    
-    // Testing support
-    virtualTime       time.Time         // For deterministic test time control
-    realTime          time.Time
-    
-    // No goroutine coordination needed
-}
-```
-
-#### **Phase 3B: JavaScript API Integration** (Week 3)
-**Focus**: Seamless integration with existing JavaScript runtime
-
-**New APIs**:
-- Enhanced Promise implementation with true Promise/A+ compliance
-- `queueMicrotask()` - W3C Microtask API
-- `requestAnimationFrame()` / `cancelAnimationFrame()` - Animation timing
-- `requestIdleCallback()` / `cancelIdleCallback()` - Idle time utilization
-- Refactored setTimeout/setInterval with proper task queue integration
-
-#### **Phase 3C: Advanced Features & Optimization** (Week 4)
-**Focus**: Production-ready features and performance optimization
-
-**Features**:
-- Render steps simulation (style recalculation, layout, paint)
-- MutationObserver integration with microtask scheduling
-- Performance monitoring and optimization
-- Error handling and recovery mechanisms
-
-#### **Phase 3D: Testing Framework Integration** (Week 5)
-**Focus**: Enhanced testing capabilities with event loop control
-
-**Testing Utilities**:
-```go
-type EventLoopTestHarness struct {
-    eventLoop *loop.EventLoop
-    timeControl *TimeController
-}
-
-// Methods:
-- AdvanceTime(duration)          // Skip forward in time
-- ProcessMicrotasks()            // Process all pending microtasks
-- ProcessNextTask()              // Process single task
-- ProcessAnimationFrame()        // Trigger animation frame
-- GetQueueCounts()               // Inspect queue states
-```
-
-### **🎯 Expected Outcomes**
-
-#### **Framework Compatibility Targets**:
-- **React**: 99% compatibility (hooks, effects, state updates)
-- **Vue**: 99% compatibility (reactivity, watchers, async components) 
-- **Angular**: 95% compatibility (zone.js patterns, change detection)
-- **General**: All Promise-based libraries work correctly
-
-#### **Performance Targets**:
-- **Event Loop Overhead**: <5% CPU overhead vs current implementation
-- **Memory Usage**: <10MB additional memory for full event loop
-- **Timing Accuracy**: <1ms deviation from browser behavior
-- **Test Execution**: No performance regression in existing tests
-
-#### **Integration Points**:
-```go
-// Enhanced Runtime with Event Loop
-type Runtime struct {
-    vm             *goja.Runtime
-    document       *dom.Document
-    eventLoop      *loop.EventLoop  // NEW
-    // ... existing fields
-}
-
-// Enhanced DOMBindings with Async APIs
-func (b *DOMBindings) SetupGlobalAPIs() {
-    b.setupPromiseAPI()      // NEW: Full Promise implementation
-    b.setupMicrotaskAPI()    // NEW: queueMicrotask
-    b.setupAnimationAPI()    // NEW: requestAnimationFrame
-    b.setupTimerAPIs()       // ENHANCED: Event loop integration
-}
-```
-
-### **📈 Implementation Timeline**
-- **Total Duration**: 5 weeks (100 hours)
-- **Week 1-2**: Phase 3A - Core Foundation (40 hours)
-- **Week 3**: Phase 3B - JavaScript Integration (20 hours)  
-- **Week 4**: Phase 3C - Advanced Features (20 hours)
-- **Week 5**: Phase 3D - Testing Integration (20 hours)
-
-### **🏆 Post-Implementation Vision**
-With the event loop complete, DOMulator will become the **premier Go-based web testing solution**, offering:
-- **True Browser Compatibility**: Matching real browser async behavior
-- **Modern Framework Support**: Full React/Vue/Angular compatibility
-- **Advanced Testing**: Deterministic async testing with precise timing control
-- **Performance Leadership**: Maintaining 100-1000x speed advantage over headless browsers
-- **Future-Proofing**: Foundation for Web Workers, Service Workers, and other advanced APIs
-
-This represents the final major architectural component needed to make DOMulator a complete, production-ready solution for modern web application testing and automation.
-
-### Framework Achievements
-- **Zero Critical Bugs**: All major functionality tested and working
-- **Type Safety**: Proper type preservation across JavaScript/Go boundary
-- **Memory Management**: Efficient object caching and lifecycle management
-- **API Completeness**: Full DOM API surface with JavaScript accessibility
-- **Unicode Support**: International text processing fully supported
-
-## Active Decisions and Considerations
-- **Quality-First Approach**: Comprehensive testing completed before optimization
-- **JavaScript Integration**: Seamless DOM manipulation from JavaScript achieved
-- **Performance Awareness**: Efficient implementations with proper caching
-- **Real Browser Compatibility**: DOM behavior matches browser standards
-- **Future Extensions**: Framework ready for additional browser APIs
-
-## Learnings and Project Insights
-- **Type Preservation Critical**: JavaScript bindings require proper Go type preservation
-- **DOM Method Inheritance**: Each node type needs specific CloneNode implementation
-- **Cache Invalidation Strategy**: Dynamic properties must update when DOM changes
-- **Testing Reveals Integration Issues**: JavaScript tests uncovered Go-side type problems
-- **Cross-Language Boundaries**: Careful attention needed for type assertions
-
-## Recent Changes Summary
-- **Element.CloneNode Implementation**: Added proper Element-specific cloning with attribute preservation
-- **JavaScript Bindings Complete**: All 28 tests passing with full DOM manipulation support
-- **Type Safety Enhanced**: Fixed Element type preservation in cloned nodes
-- **Framework Completion**: All major components now production-ready
-
-## Code Quality Achievements
-- **100% Test Pass Rate**: Zero failures across all packages
-- **Complete API Coverage**: All DOM operations accessible from JavaScript
-- **Robust Error Handling**: Proper exception handling and edge case management
-- **Performance Optimized**: Efficient object reuse and caching strategies
-- **Production Ready**: Framework suitable for real-world web automation and testing
-
-## 🏆 **FRAMEWORK COMPLETE**: Ready for Real-World Use
-
-DOMulator now provides a complete, production-ready DOM implementation with:
-- Full JavaScript runtime integration
-- Complete CSS selector support
-- Robust HTML parsing
-- Comprehensive event system
-- Complete testing framework
-- All tests passing (100% success rate)
-
 The framework is ready for:
 - Web scraping and automation
 - Server-side DOM manipulation
 - HTML processing and transformation
 - Testing web applications
-- Building web-based tools in Go
+- Building web-based tools in Go<environment_details>
+# VSCode Visible Files
+internal/dom/treewalker_test.go
+
+# VSCode Open Tabs
+internal/dom/range/abstractrange.go
+internal/dom/range/staticrange.go
+internal/dom/range/range.go
+internal/dom/range/boundary.go
+internal/dom/range.go
+internal/dom/ranges/boundary_test.go
+internal/dom/ranges/staticrange_test.go
+internal/dom/ranges/staticrange.go
+internal/dom/ranges/range.go
+internal/dom/ranges/range_test.go
+internal/dom/ranges/boundary.go
+internal/parser/parser.go
+internal/dom/element.go
+internal/parser/parser_test.go
+internal/css/selectors_test.go
+internal/dom/htmlcollection.go
+internal/dom/clone_test.go
+internal/dom/document_spec_compliance_test.go
+internal/dom/document_test.go
+internal/dom/element_test.go
+internal/dom/clone.go
+internal/dom/parentnode_test.go
+internal/js/bindings_test.go
+internal/js/runtime_test.go
+internal/dom/document.go
+internal/dom/domimplementation_test.go
+internal/dom/nodefilter_spec_compliance_test.go
+internal/dom/nodefilter_test.go
+internal/dom/nodeiterator_test.go
+internal/dom/treewalker_spec_compliance_test.go
+internal/dom/treewalker_test.go
+
+# Current Time
+6/4/2025, 9:49:50 PM (America/Los_Angeles, UTC-7:00)
+
+# Context Window Usage
+854,723 / 1,048.576K tokens used (77%)
+
+# Current Mode
+ACT MODE
+</environment_details>

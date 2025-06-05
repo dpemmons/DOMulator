@@ -15,8 +15,8 @@ func TestElementCreation(t *testing.T) {
 	if elem.NodeName() != "DIV" {
 		t.Errorf("Expected node name 'DIV', got %s", elem.NodeName())
 	}
-	if elem.TagName() != "div" {
-		t.Errorf("Expected tag name 'div', got %s", elem.TagName())
+	if elem.TagName() != "DIV" { // Expect uppercase
+		t.Errorf("Expected tag name 'DIV', got %s", elem.TagName())
 	}
 	if elem.OwnerDocument() != doc {
 		t.Errorf("Expected owner document to match")
@@ -313,14 +313,14 @@ func TestElementOuterHTML(t *testing.T) {
 	elem := NewElement("div", doc)
 
 	// Test empty element
-	expected := "<div></div>"
+	expected := "<DIV></DIV>" // Expect uppercase
 	if elem.OuterHTML() != expected {
 		t.Errorf("Expected outerHTML '%s', got '%s'", expected, elem.OuterHTML())
 	}
 
 	// Test with content
 	elem.SetTextContent("Hello")
-	expected = "<div>Hello</div>"
+	expected = "<DIV>Hello</DIV>" // Expect uppercase
 	if elem.OuterHTML() != expected {
 		t.Errorf("Expected outerHTML '%s', got '%s'", expected, elem.OuterHTML())
 	}
@@ -328,7 +328,7 @@ func TestElementOuterHTML(t *testing.T) {
 	// Test different tag
 	span := NewElement("span", doc)
 	span.SetTextContent("World")
-	expected = "<span>World</span>"
+	expected = "<SPAN>World</SPAN>" // Expect uppercase
 	if span.OuterHTML() != expected {
 		t.Errorf("Expected span outerHTML '%s', got '%s'", expected, span.OuterHTML())
 	}
@@ -526,8 +526,8 @@ func TestElementInsertAdjacentHTML(t *testing.T) {
 		t.Errorf("Expected first child to be element node")
 	}
 	emElement := targetChildren.Item(0).(*Element)
-	if emElement.TagName() != "em" {
-		t.Errorf("Expected first child to be 'em' element, got '%s'", emElement.TagName())
+	if emElement.TagName() != "EM" { // Expect uppercase
+		t.Errorf("Expected first child to be 'EM' element, got '%s'", emElement.TagName())
 	}
 
 	// Test beforeend - insert as last child of target
@@ -547,8 +547,8 @@ func TestElementInsertAdjacentHTML(t *testing.T) {
 		t.Errorf("Expected last child to be element node")
 	}
 	strongElement := lastChild.(*Element)
-	if strongElement.TagName() != "strong" {
-		t.Errorf("Expected last child to be 'strong' element, got '%s'", strongElement.TagName())
+	if strongElement.TagName() != "STRONG" { // Expect uppercase
+		t.Errorf("Expected last child to be 'STRONG' element, got '%s'", strongElement.TagName())
 	}
 
 	// Test afterend - insert after target element
@@ -662,7 +662,7 @@ func TestElementInsertAdjacentHTMLBasicParsing(t *testing.T) {
 	}
 
 	spanElement := children.Item(1).(*Element)
-	if spanElement.TagName() != "span" {
+	if spanElement.TagName() != "SPAN" { // Expect uppercase
 		t.Errorf("Expected span element, got '%s'", spanElement.TagName())
 	}
 
@@ -678,7 +678,7 @@ func TestElementInsertAdjacentHTMLBasicParsing(t *testing.T) {
 	}
 
 	divElement := children.Item(2).(*Element)
-	if divElement.TagName() != "div" {
+	if divElement.TagName() != "DIV" { // Expect uppercase
 		t.Errorf("Expected div element, got '%s'", divElement.TagName())
 	}
 	if divElement.GetAttribute("class") != "test" {
@@ -700,7 +700,7 @@ func TestElementInsertAdjacentHTMLBasicParsing(t *testing.T) {
 	}
 
 	inputElement := children.Item(3).(*Element)
-	if inputElement.TagName() != "input" {
+	if inputElement.TagName() != "INPUT" { // Expect uppercase
 		t.Errorf("Expected input element, got '%s'", inputElement.TagName())
 	}
 	if inputElement.GetAttribute("type") != "text" {
