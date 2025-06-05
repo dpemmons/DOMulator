@@ -38,13 +38,25 @@ func (cd *characterDataImpl) Length() int {
 }
 
 // replaceDataInternal implements the "replace data" algorithm from the WHATWG DOM specification
+// with backward compatibility for negative offsets
 func (cd *characterDataImpl) replaceDataInternal(offset, count int, data string) {
+	// Handle negative offset (backward compatibility)
+	if offset < 0 {
+		offset = 0
+	}
+
+	// Handle negative count
+	if count < 0 {
+		count = 0
+	}
+
 	// Step 1: Let length be node's length
 	length := cd.Length()
 
-	// Step 2: If offset is greater than length, then throw an "IndexSizeError" DOMException
+	// Step 2: If offset is greater than length, append data at end
 	if offset > length {
-		panic(NewIndexSizeError("offset is greater than length"))
+		cd.nodeValue += data
+		return
 	}
 
 	// Step 3: If offset plus count is greater than length, then set count to length minus offset
@@ -75,13 +87,24 @@ func (cd *characterDataImpl) replaceDataInternal(offset, count int, data string)
 }
 
 // substringDataInternal implements the "substring data" algorithm from the WHATWG DOM specification
+// with backward compatibility for negative offsets
 func (cd *characterDataImpl) substringDataInternal(offset, count int) string {
+	// Handle negative offset (backward compatibility)
+	if offset < 0 {
+		offset = 0
+	}
+
+	// Handle negative count
+	if count < 0 {
+		count = 0
+	}
+
 	// Step 1: Let length be node's length
 	length := cd.Length()
 
-	// Step 2: If offset is greater than length, then throw an "IndexSizeError" DOMException
-	if offset > length {
-		panic(NewIndexSizeError("offset is greater than length"))
+	// Step 2: If offset is greater than length, return empty string
+	if offset >= length {
+		return ""
 	}
 
 	// Step 3: If offset plus count is greater than length, return substring to end

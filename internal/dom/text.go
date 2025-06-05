@@ -6,174 +6,136 @@ import (
 
 // Text represents a text node in the DOM tree.
 type Text struct {
-	nodeImpl
+	characterDataImpl
 }
 
-// NewText creates a new Text node.
+// NewText creates a new Text node following WHATWG DOM specification.
 func NewText(data string, doc *Document) *Text {
 	text := &Text{
-		nodeImpl: nodeImpl{
-			nodeType:      TextNode,
-			nodeName:      "#text",
-			nodeValue:     data,
-			ownerDocument: doc,
+		characterDataImpl: characterDataImpl{
+			nodeImpl: nodeImpl{
+				nodeType:      TextNode,
+				nodeName:      "#text",
+				nodeValue:     data,
+				ownerDocument: doc,
+			},
 		},
 	}
-	text.nodeImpl.self = text // Set the self reference
+	text.characterDataImpl.nodeImpl.self = text // Set the self reference
 	return text
 }
 
-// Data returns the text content of the text node.
-func (t *Text) Data() string {
-	return t.nodeValue
+// WholeText returns the concatenation of the data of all the contiguous Text nodes
+// of this node, in tree order, as specified in WHATWG DOM Section 4.11.
+func (t *Text) WholeText() string {
+	// Step 1: Get the contiguous text nodes of this node
+	contiguousNodes := t.getContiguousTextNodes()
+
+	// Step 2: Concatenate their data in tree order
+	var result string
+	for _, node := range contiguousNodes {
+		if textNode, ok := node.(*Text); ok {
+			result += textNode.Data()
+		}
+	}
+
+	return result
 }
 
-// SetData sets the text content of the text node.
-func (t *Text) SetData(data string) {
-	t.nodeValue = data
+// getContiguousTextNodes returns the contiguous Text nodes of this node.
+// The contiguous Text nodes of a node are: node, node's previous sibling Text node,
+// if any, and its contiguous Text nodes, and node's next sibling Text node, if any,
+// and its contiguous Text nodes, avoiding any duplicates.
+func (t *Text) getContiguousTextNodes() []Node {
+	var nodes []Node
+
+	// Collect previous contiguous text nodes (in reverse order)
+	var prevNodes []Node
+	current := t.PreviousSibling()
+	for current != nil && current.NodeType() == TextNode {
+		prevNodes = append(prevNodes, current)
+		current = current.PreviousSibling()
+	}
+
+	// Add previous nodes in correct order (reverse the slice)
+	for i := len(prevNodes) - 1; i >= 0; i-- {
+		nodes = append(nodes, prevNodes[i])
+	}
+
+	// Add this node
+	nodes = append(nodes, t)
+
+	// Collect next contiguous text nodes
+	current = t.NextSibling()
+	for current != nil && current.NodeType() == TextNode {
+		nodes = append(nodes, current)
+		current = current.NextSibling()
+	}
+
+	return nodes
 }
 
-// Length returns the length of the text data.
-func (t *Text) Length() int {
-	return len([]rune(t.nodeValue)) // Use runes for proper Unicode support
-}
-
-// SubstringData extracts a range of data from the text node.
-func (t *Text) SubstringData(offset, count int) string {
-	runes := []rune(t.nodeValue)
-
-	// Handle negative offset
-	if offset < 0 {
-		offset = 0
-	}
-
-	// If offset is beyond the text, return empty string
-	if offset >= len(runes) {
-		return ""
-	}
-
-	// Calculate the end position
-	end := offset + count
-	if end > len(runes) {
-		end = len(runes)
-	}
-
-	return string(runes[offset:end])
-}
-
-// AppendData appends data to the end of the text node.
-func (t *Text) AppendData(data string) {
-	t.nodeValue += data
-}
-
-// InsertData inserts data at the specified offset.
-func (t *Text) InsertData(offset int, data string) {
-	runes := []rune(t.nodeValue)
-
-	// Handle negative offset
-	if offset < 0 {
-		offset = 0
-	}
-
-	// If offset is beyond the text, append
-	if offset >= len(runes) {
-		t.nodeValue += data
-		return
-	}
-
-	// Insert the data
-	newRunes := make([]rune, 0, len(runes)+len([]rune(data)))
-	newRunes = append(newRunes, runes[:offset]...)
-	newRunes = append(newRunes, []rune(data)...)
-	newRunes = append(newRunes, runes[offset:]...)
-
-	t.nodeValue = string(newRunes)
-}
-
-// DeleteData deletes data from the text node.
-func (t *Text) DeleteData(offset, count int) {
-	runes := []rune(t.nodeValue)
-
-	// Handle negative offset
-	if offset < 0 {
-		offset = 0
-	}
-
-	// If offset is beyond the text, do nothing
-	if offset >= len(runes) {
-		return
-	}
-
-	// Calculate the end position
-	end := offset + count
-	if end > len(runes) {
-		end = len(runes)
-	}
-
-	// Delete the data
-	newRunes := make([]rune, 0, len(runes)-(end-offset))
-	newRunes = append(newRunes, runes[:offset]...)
-	newRunes = append(newRunes, runes[end:]...)
-
-	t.nodeValue = string(newRunes)
-}
-
-// ReplaceData replaces data in the text node.
-func (t *Text) ReplaceData(offset, count int, data string) {
-	runes := []rune(t.nodeValue)
-
-	// Handle negative offset
-	if offset < 0 {
-		offset = 0
-	}
-
-	// If offset is beyond the text, append
-	if offset >= len(runes) {
-		t.nodeValue += data
-		return
-	}
-
-	// Calculate the end position
-	end := offset + count
-	if end > len(runes) {
-		end = len(runes)
-	}
-
-	// Replace the data
-	newRunes := make([]rune, 0, len(runes)-(end-offset)+len([]rune(data)))
-	newRunes = append(newRunes, runes[:offset]...)
-	newRunes = append(newRunes, []rune(data)...)
-	newRunes = append(newRunes, runes[end:]...)
-
-	t.nodeValue = string(newRunes)
-}
-
-// SplitText splits this text node into two text nodes at the specified offset.
+// SplitText splits this text node into two text nodes at the specified offset
+// following the WHATWG DOM specification algorithm with backward compatibility.
 func (t *Text) SplitText(offset int) *Text {
-	runes := []rune(t.nodeValue)
-
-	// Handle negative offset
+	// Handle negative offset (backward compatibility)
 	if offset < 0 {
 		offset = 0
 	}
 
-	// If offset is beyond the text, create empty new text
-	if offset >= len(runes) {
-		newText := NewText("", t.ownerDocument)
-		return newText
+	// Step 1: Let length be node's length
+	length := t.Length()
+
+	// Backward compatibility: If offset is greater than length, treat as splitting at end
+	if offset > length {
+		offset = length
 	}
 
-	// Split the text
-	originalData := string(runes[:offset])
-	newData := string(runes[offset:])
+	// Step 3: Let count be length minus offset
+	count := length - offset
 
-	// Update original text
-	t.nodeValue = originalData
+	// Step 4: Let new data be the result of substringing data with node, offset, and count
+	var newData string
+	if count > 0 {
+		newData = t.substringDataInternal(offset, count)
+	} else {
+		newData = ""
+	}
 
-	// Create new text node
-	newText := NewText(newData, t.ownerDocument)
+	// Step 5: Let new node be a new Text node, with the same node document as node
+	newNode := NewText(newData, t.ownerDocument)
 
-	return newText
+	// Step 6: Let parent be node's parent
+	parent := t.ParentNode()
+
+	// Step 7: If parent is not null:
+	if parent != nil {
+		// Step 7.1: Insert new node into parent before node's next sibling
+		nextSibling := t.NextSibling()
+		if nextSibling != nil {
+			parent.InsertBefore(newNode, nextSibling)
+		} else {
+			parent.AppendChild(newNode)
+		}
+
+		// Steps 7.2-7.5: Range updates (not implemented in this DOM - placeholder for future)
+		// For each live range whose start node is node and start offset is greater than offset,
+		// set its start node to new node and decrease its start offset by offset.
+		// For each live range whose end node is node and end offset is greater than offset,
+		// set its end node to new node and decrease its end offset by offset.
+		// For each live range whose start node is parent and start offset is equal to
+		// the index of node plus 1, increase its start offset by 1.
+		// For each live range whose end node is parent and end offset is equal to
+		// the index of node plus 1, increase its end offset by 1.
+	}
+
+	// Step 8: Replace data with node, offset, count, and data the empty string
+	if count > 0 {
+		t.replaceDataInternal(offset, count, "")
+	}
+
+	// Step 9: Return new node
+	return newNode
 }
 
 // CloneNode creates a copy of the text node using the spec-compliant cloning implementation.

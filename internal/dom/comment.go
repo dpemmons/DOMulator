@@ -9,7 +9,9 @@ type Comment struct {
 	characterDataImpl
 }
 
-// NewComment creates a new Comment node.
+// NewComment creates a new Comment node following WHATWG DOM specification.
+// Per WHATWG DOM Section 4.14: "The new Comment(data) constructor steps are to
+// set this's data to data and this's node document to current global object's associated Document."
 func NewComment(data string, doc *Document) *Comment {
 	comment := &Comment{
 		characterDataImpl: characterDataImpl{

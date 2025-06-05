@@ -28,6 +28,7 @@ func NewProcessingInstruction(target, data string, doc *Document) *ProcessingIns
 }
 
 // Target returns the target of the processing instruction.
+// Per WHATWG DOM Section 4.13: "The target getter steps are to return this's target."
 func (pi *ProcessingInstruction) Target() string {
 	return pi.target
 }
