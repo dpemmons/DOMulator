@@ -154,12 +154,10 @@ func cloneElement(elem *Element, document *Document, fallbackRegistry interface{
 		copy = NewElement(elem.LocalName(), document)
 	}
 
-	// Attributes are copied directly.
-	// Namespace handling for attributes (e.g., xlink:href) would require Attr nodes
-	// to be fully namespace-aware and cloned as such.
-	// The current SetAttribute/GetAttribute on Element are simple string maps.
-	for name, value := range elem.attributes {
-		copy.SetAttribute(name, value)
+	// Copy attributes using NamedNodeMap API
+	attrs := elem.attributes.ToSlice()
+	for _, attr := range attrs {
+		copy.SetAttribute(attr.Name(), attr.Value())
 	}
 
 	// Note: The fields like copy.nodeName, copy.tagName, copy.localName, copy.namespaceURI, copy.prefix

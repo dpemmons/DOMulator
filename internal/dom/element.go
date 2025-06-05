@@ -18,8 +18,9 @@ type Element struct {
 	localName    string
 	tagName      string // Computed from prefix and localName
 
-	attributes map[string]string        // Map to store attributes
-	classList  *collection.DOMTokenList // DOMTokenList for class attribute
+	attributes   *NamedNodeMap            // NamedNodeMap to store attributes per spec
+	attributeMap map[string]string        // Legacy compatibility map - will be phased out
+	classList    *collection.DOMTokenList // DOMTokenList for class attribute
 	// dataset        *Dataset      // To be implemented
 	// style          *CSSStyleDeclaration // To be implemented
 
@@ -78,9 +79,10 @@ func NewElement(tagName string, doc *Document) *Element {
 		prefix:       info.Prefix,
 		localName:    localNameValue,          // Store the original (lowercase) local name
 		tagName:      nodeNameValue,           // tagName field should mirror nodeName for elements
-		attributes:   make(map[string]string), // Initialize the attributes map
+		attributeMap: make(map[string]string), // Legacy compatibility map
 	}
-	elem.nodeImpl.self = elem // Set the self reference
+	elem.attributes = NewNamedNodeMap(elem) // Initialize the NamedNodeMap
+	elem.nodeImpl.self = elem               // Set the self reference
 	return elem
 }
 
@@ -130,9 +132,10 @@ func NewElementNS(namespaceURI, qualifiedName string, doc *Document) (*Element, 
 		prefix:       prefix,
 		localName:    localName,
 		tagName:      qualifiedName,
-		attributes:   make(map[string]string), // Initialize the attributes map
+		attributeMap: make(map[string]string), // Legacy compatibility map
 	}
-	elem.nodeImpl.self = elem // Set the self reference
+	elem.attributes = NewNamedNodeMap(elem) // Initialize the NamedNodeMap
+	elem.nodeImpl.self = elem               // Set the self reference
 	return elem, nil
 }
 
@@ -213,117 +216,71 @@ func (e *Element) SetIsValue(is string) {
 // SetAttribute sets the value of an attribute on the specified element.
 // If the attribute already exists, its value is updated; otherwise, a new attribute is added.
 func (e *Element) SetAttribute(name, value string) {
-	e.attributes[name] = value
+	attr := NewAttr(name, value, e.ownerDocument)
+	e.attributes.SetNamedItem(attr)
 }
 
 // GetAttribute returns the value of the named attribute on the specified element.
 // If the named attribute does not exist, the value will be an empty string.
 func (e *Element) GetAttribute(name string) string {
-	return e.attributes[name]
+	attr := e.attributes.GetNamedItem(name)
+	if attr != nil {
+		return attr.Value()
+	}
+	return ""
 }
 
 // HasAttribute returns true if the element has the specified attribute
 func (e *Element) HasAttribute(name string) bool {
-	_, exists := e.attributes[name]
-	return exists
+	return e.attributes.Contains(name)
 }
 
 // RemoveAttribute removes the named attribute from the element
 func (e *Element) RemoveAttribute(name string) {
-	delete(e.attributes, name)
+	// According to the DOM spec, removeAttribute should be silent if the attribute doesn't exist
+	defer func() {
+		if r := recover(); r != nil {
+			// Silently ignore NotFoundError as per spec
+		}
+	}()
+	e.attributes.RemoveNamedItem(name)
 }
 
 // GetAttributeNS returns the value of the attribute with the specified namespace and local name.
 func (e *Element) GetAttributeNS(namespaceURI, localName string) string {
-	// For now, use a simple implementation that searches for the attribute
-	// TODO: Implement proper namespace-aware attribute storage
-	for name, value := range e.attributes {
-		if strings.Contains(name, ":") {
-			parts := strings.SplitN(name, ":", 2)
-			if len(parts) == 2 {
-				prefix := parts[0]
-				attrLocalName := parts[1]
-				if attrLocalName == localName {
-					// Check if prefix matches the namespace
-					expectedNS := GetWellKnownNamespace(prefix)
-					if expectedNS == namespaceURI {
-						return value
-					}
-				}
-			}
-		} else if namespaceURI == "" && name == localName {
-			// No namespace case
-			return value
-		}
+	attr := e.attributes.GetNamedItemNS(namespaceURI, localName)
+	if attr != nil {
+		return attr.Value()
 	}
 	return ""
 }
 
 // SetAttributeNS sets the value of the attribute with the specified namespace and qualified name.
 func (e *Element) SetAttributeNS(namespaceURI, qualifiedName, value string) error {
-	// Validate the qualified name and namespace combination
-	_, _, _, err := ValidateAndExtract(namespaceURI, qualifiedName)
+	// Create namespace-aware attribute
+	attr, err := NewAttrNS(namespaceURI, qualifiedName, value, e.ownerDocument)
 	if err != nil {
 		return err
 	}
 
-	// For now, store with the qualified name
-	// TODO: Implement proper namespace-aware attribute storage
-	e.attributes[qualifiedName] = value
+	e.attributes.SetNamedItemNS(attr)
 	return nil
 }
 
 // HasAttributeNS returns true if the element has an attribute with the specified namespace and local name.
 func (e *Element) HasAttributeNS(namespaceURI, localName string) bool {
-	// For now, use a simple implementation that searches for the attribute
-	// TODO: Implement proper namespace-aware attribute storage
-	for name := range e.attributes {
-		if strings.Contains(name, ":") {
-			parts := strings.SplitN(name, ":", 2)
-			if len(parts) == 2 {
-				prefix := parts[0]
-				attrLocalName := parts[1]
-				if attrLocalName == localName {
-					// Check if prefix matches the namespace
-					expectedNS := GetWellKnownNamespace(prefix)
-					if expectedNS == namespaceURI {
-						return true
-					}
-				}
-			}
-		} else if namespaceURI == "" && name == localName {
-			// No namespace case
-			return true
-		}
-	}
-	return false
+	return e.attributes.ContainsNS(namespaceURI, localName)
 }
 
 // RemoveAttributeNS removes the attribute with the specified namespace and local name.
 func (e *Element) RemoveAttributeNS(namespaceURI, localName string) {
-	// For now, use a simple implementation that searches for the attribute
-	// TODO: Implement proper namespace-aware attribute storage
-	for name := range e.attributes {
-		if strings.Contains(name, ":") {
-			parts := strings.SplitN(name, ":", 2)
-			if len(parts) == 2 {
-				prefix := parts[0]
-				attrLocalName := parts[1]
-				if attrLocalName == localName {
-					// Check if prefix matches the namespace
-					expectedNS := GetWellKnownNamespace(prefix)
-					if expectedNS == namespaceURI {
-						delete(e.attributes, name)
-						return
-					}
-				}
-			}
-		} else if namespaceURI == "" && name == localName {
-			// No namespace case
-			delete(e.attributes, name)
-			return
+	// According to the DOM spec, removeAttributeNS should be silent if the attribute doesn't exist
+	defer func() {
+		if r := recover(); r != nil {
+			// Silently ignore NotFoundError as per spec
 		}
-	}
+	}()
+	e.attributes.RemoveNamedItemNS(namespaceURI, localName)
 }
 
 // ClassList returns the DOMTokenList for the class attribute

@@ -315,9 +315,10 @@ func (d *Document) adoptNodeRecursive(node Node) {
 	// in inclusiveDescendant's attribute list to document
 	if elem, ok := node.(*Element); ok {
 		// Set attributes' owner document (when attributes are properly implemented as nodes)
-		for name := range elem.attributes {
+		attrs := elem.attributes.ToSlice()
+		for _, attr := range attrs {
 			// TODO: Set attribute node document when Attr nodes are fully implemented
-			_ = name
+			_ = attr
 		}
 	}
 

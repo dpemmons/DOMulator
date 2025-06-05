@@ -10,10 +10,18 @@ type Attr struct {
 	name         string
 	value        string
 	ownerElement *Element
+
+	// Namespace support
+	namespaceURI string
+	prefix       string
+	localName    string
 }
 
 // NewAttr creates a new Attr node.
 func NewAttr(name, value string, doc *Document) *Attr {
+	// Parse qualified name for namespace information
+	info := ParseQualifiedName(name)
+
 	attr := &Attr{
 		nodeImpl: nodeImpl{
 			nodeType:      AttributeNode,
@@ -21,11 +29,39 @@ func NewAttr(name, value string, doc *Document) *Attr {
 			nodeValue:     value,
 			ownerDocument: doc,
 		},
-		name:  name,
-		value: value,
+		name:         name,
+		value:        value,
+		namespaceURI: info.NamespaceURI,
+		prefix:       info.Prefix,
+		localName:    info.LocalName,
 	}
 	attr.nodeImpl.self = attr // Set the self reference
 	return attr
+}
+
+// NewAttrNS creates a new Attr node with namespace support.
+func NewAttrNS(namespaceURI, qualifiedName, value string, doc *Document) (*Attr, error) {
+	// Validate and extract namespace information
+	ns, prefix, localName, err := ValidateAndExtract(namespaceURI, qualifiedName)
+	if err != nil {
+		return nil, err
+	}
+
+	attr := &Attr{
+		nodeImpl: nodeImpl{
+			nodeType:      AttributeNode,
+			nodeName:      qualifiedName,
+			nodeValue:     value,
+			ownerDocument: doc,
+		},
+		name:         qualifiedName,
+		value:        value,
+		namespaceURI: ns,
+		prefix:       prefix,
+		localName:    localName,
+	}
+	attr.nodeImpl.self = attr // Set the self reference
+	return attr, nil
 }
 
 // Name returns the name of the attribute.
@@ -47,6 +83,21 @@ func (a *Attr) SetValue(value string) {
 // OwnerElement returns the Element that owns this attribute.
 func (a *Attr) OwnerElement() *Element {
 	return a.ownerElement
+}
+
+// NamespaceURI returns the namespace URI of the attribute.
+func (a *Attr) NamespaceURI() string {
+	return a.namespaceURI
+}
+
+// Prefix returns the namespace prefix of the attribute.
+func (a *Attr) Prefix() string {
+	return a.prefix
+}
+
+// LocalName returns the local name of the attribute.
+func (a *Attr) LocalName() string {
+	return a.localName
 }
 
 // CloneNode creates a copy of the attribute using the spec-compliant cloning implementation.

@@ -779,14 +779,16 @@ func (n *nodeImpl) IsEqualNode(otherNode Node) bool {
 					return false
 				}
 
-				// Check attribute list size and content - use direct field access
-				if len(selfElem.attributes) != len(otherElem.attributes) {
+				// Check attribute list size and content
+				if selfElem.attributes.Length() != otherElem.attributes.Length() {
 					return false
 				}
 
 				// Each attribute in A has an equal attribute in B
-				for name, value := range selfElem.attributes {
-					if otherElem.attributes[name] != value {
+				selfAttrs := selfElem.attributes.ToSlice()
+				for _, attr := range selfAttrs {
+					otherAttr := otherElem.attributes.GetNamedItem(attr.Name())
+					if otherAttr == nil || otherAttr.Value() != attr.Value() {
 						return false
 					}
 				}
@@ -1314,8 +1316,10 @@ func (n *nodeImpl) locateNamespacePrefix(element *Element, namespace string) str
 
 	// If element has an attribute whose namespace prefix is "xmlns" and value is namespace,
 	// then return element's first such attribute's local name
-	for attrName, attrValue := range element.attributes {
-		if strings.HasPrefix(attrName, "xmlns:") && attrValue == namespace {
+	attrs := element.attributes.ToSlice()
+	for _, attr := range attrs {
+		attrName := attr.Name()
+		if strings.HasPrefix(attrName, "xmlns:") && attr.Value() == namespace {
 			return strings.TrimPrefix(attrName, "xmlns:")
 		}
 	}
@@ -1358,7 +1362,9 @@ func (n *nodeImpl) locateNamespace(node Node, prefix string) string {
 		// Check for xmlns attributes
 		if prefix != "" {
 			// Look for xmlns:prefix attribute
-			if value, exists := element.attributes["xmlns:"+prefix]; exists {
+			attr := element.attributes.GetNamedItem("xmlns:" + prefix)
+			if attr != nil {
+				value := attr.Value()
 				if value == "" {
 					return ""
 				}
@@ -1366,7 +1372,9 @@ func (n *nodeImpl) locateNamespace(node Node, prefix string) string {
 			}
 		} else {
 			// Look for xmlns attribute (default namespace)
-			if value, exists := element.attributes["xmlns"]; exists {
+			attr := element.attributes.GetNamedItem("xmlns")
+			if attr != nil {
+				value := attr.Value()
 				if value == "" {
 					return ""
 				}
