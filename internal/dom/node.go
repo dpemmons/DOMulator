@@ -662,13 +662,12 @@ func (n *nodeImpl) IsEmpty() bool {
 // Phase 1: Core Properties & Simple Methods
 
 // IsConnected returns true if the node is connected to a document
+// Per WHATWG DOM Section 4.2.1: A node is in a document tree if its shadow-including root is a document
 func (n *nodeImpl) IsConnected() bool {
-	// A node is connected if its root is a document
-	root := n.self
-	for root.ParentNode() != nil {
-		root = root.ParentNode()
-	}
-	_, isDocument := root.(*Document)
+	// A node is connected if its shadow-including root is a document
+	// Use GetRootNode with composed: true to cross shadow boundaries
+	shadowIncludingRoot := n.self.GetRootNode(&GetRootNodeOptions{Composed: true})
+	_, isDocument := shadowIncludingRoot.(*Document)
 	return isDocument
 }
 
