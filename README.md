@@ -23,40 +23,45 @@ go get github.com/dpemmons/DOMulator
 package main
 
 import (
+    "net/http"
+    "net/http/httptest"
     "testing"
-    "github.com/example/domulator"
+    "github.com/dpemmons/DOMulator"
 )
 
 func TestHTMXForm(t *testing.T) {
-    // Create a test environment
-    test := domulator.NewTest(t)
-
-    // Mock your server endpoint
-    test.MockPOST("/api/contact", func(req domulator.Request) domulator.Response {
-        return domulator.Response{
-            Status: 200,
-            Body: `<div class="success">Message sent!</div>`,
+    // Create a test server with your application
+    server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        switch r.URL.Path {
+        case "/":
+            w.Header().Set("Content-Type", "text/html")
+            w.Write([]byte(`
+                <form hx-post="/api/contact" hx-target="#result">
+                    <input name="email" type="email" required>
+                    <button type="submit">Send</button>
+                </form>
+                <div id="result"></div>
+                <script src="https://unpkg.com/htmx.org"></script>
+            `))
+        case "/api/contact":
+            w.Write([]byte(`<div class="success">Message sent!</div>`))
         }
-    })
+    }))
+    defer server.Close()
 
-    // Load your HTML
-    test.LoadHTML(`
-        <form hx-post="/api/contact" hx-target="#result">
-            <input name="email" type="email" required>
-            <button type="submit">Send</button>
-        </form>
-        <div id="result"></div>
-    `)
-
-    // Load HTMX
-    test.LoadScript("https://unpkg.com/htmx.org")
-
+    // Create a DOMulator test instance
+    test := domulator.NewTest(t)
+    test.WithServer(server)
+    
+    // Navigate to the page - automatically loads HTML, scripts, etc.
+    test.Navigate("/")
+    
     // Interact with the page
     test.Type("input[name=email]", "test@example.com")
     test.Click("button")
-
+    
     // Assert the result
-    test.AssertText("#result .success", "Message sent!")
+    test.AssertElement("#result .success").HasText("Message sent!")
 }
 ```
 
@@ -75,33 +80,60 @@ DOMulator provides three main components:
 #### Creating a Test Environment
 
 ```go
-// Basic setup
-dom := domulator.New()
-
-// With test harness (recommended)
+// Create a browser-like test instance
 test := domulator.NewTest(t)
 
-// With custom options
-dom := domulator.New(
-    domulator.WithConsoleLog(true),
-    domulator.WithTimeout(30 * time.Second),
-    domulator.WithBaseURL("https://example.com"),
-)
+// Navigate to a URL (automatic resource loading)
+test.Navigate("http://localhost:3000")
+
+// Or use with httptest server for mocking
+server := httptest.NewServer(myHandler)
+defer server.Close()
+
+test.WithServer(server).Navigate("/")
 ```
 
-#### Loading Content
+#### Working with httptest
 
 ```go
-// HTML string
-test.LoadHTML(`<div>Hello World</div>`)
+func TestMyApp(t *testing.T) {
+    // Create your test server with whatever behavior you want
+    server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        switch r.URL.Path {
+        case "/":
+            w.Write([]byte(`<h1>Home</h1><script src="/app.js"></script>`))
+        case "/app.js":
+            w.Header().Set("Content-Type", "application/javascript")
+            w.Write([]byte(`console.log("App loaded");`))
+        case "/api/data":
+            w.Header().Set("Content-Type", "application/json")
+            w.Write([]byte(`{"status": "ok"}`))
+        }
+    }))
+    defer server.Close()
+    
+    // Use your real application handler instead
+    // server := httptest.NewServer(myapp.Handler())
+    
+    test := domulator.NewTest(t)
+    test.WithServer(server)
+    
+    // Navigate automatically loads HTML, scripts, CSS, etc.
+    test.Navigate("/")
+    
+    // Relative URLs work automatically
+    test.Navigate("/api/data")
+}
+```
 
-// HTML file
-test.LoadHTMLFile("templates/index.html")
+#### Executing JavaScript
 
-// JavaScript
+```go
+// Execute custom JavaScript
 test.ExecuteScript(`console.log("Hello from JS!")`)
-test.LoadScriptFile("app.js")
-test.LoadScript("https://cdn.jsdelivr.net/npm/alpinejs")
+
+// JavaScript loaded via <script> tags executes automatically
+test.Navigate("/") // Loads page with <script> tags
 ```
 
 #### Simulating User Interactions
@@ -157,43 +189,6 @@ test.AssertNotExists(".deleted-item")
 test.AssertCount(".list-item", 5)
 ```
 
-#### Network Mocking
-
-```go
-// Simple response
-test.MockGET("/api/user", domulator.Response{
-    Status: 200,
-    Body: `{"name": "John Doe"}`,
-})
-
-// Dynamic handler
-test.MockPOST("/api/items", func(req domulator.Request) domulator.Response {
-    var item Item
-    json.Unmarshal(req.Body, &item)
-
-    return domulator.Response{
-        Status: 201,
-        Headers: map[string]string{
-            "Location": fmt.Sprintf("/api/items/%d", item.ID),
-        },
-        Body: req.Body, // Echo back
-    }
-})
-
-// Pattern matching
-test.MockPattern("GET /api/users/*", func(req domulator.Request) domulator.Response {
-    userID := path.Base(req.URL)
-    return domulator.Response{
-        Status: 200,
-        Body: fmt.Sprintf(`{"id": "%s"}`, userID),
-    }
-})
-
-// Verify requests
-requests := test.GetRequests("/api/submit")
-assert.Len(t, requests, 1)
-assert.Equal(t, "application/json", requests[0].Header("Content-Type"))
-```
 
 #### Waiting for Conditions
 
@@ -220,34 +215,38 @@ test.WaitForNetworkIdle()
 
 ```go
 func TestHTMXInfiniteScroll(t *testing.T) {
-    test := domulator.NewTest(t)
-
     page := 1
-    test.MockGET("/api/items", func(req domulator.Request) domulator.Response {
-        html := fmt.Sprintf(`
-            <div class="item">Item %d</div>
-            <div class="item">Item %d</div>
-            <div hx-get="/api/items?page=%d" 
-                 hx-trigger="revealed" 
-                 hx-swap="outerHTML">
-                Load More
-            </div>
-        `, page*2-1, page*2, page+1)
-        page++
+    server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        switch r.URL.Path {
+        case "/":
+            w.Write([]byte(`
+                <div id="items" hx-get="/api/items" hx-trigger="load"></div>
+                <script src="https://unpkg.com/htmx.org"></script>
+            `))
+        case "/api/items":
+            html := fmt.Sprintf(`
+                <div class="item">Item %d</div>
+                <div class="item">Item %d</div>
+                <div hx-get="/api/items?page=%d" 
+                     hx-trigger="revealed" 
+                     hx-swap="outerHTML">
+                    Load More
+                </div>
+            `, page*2-1, page*2, page+1)
+            page++
+            w.Write([]byte(html))
+        }
+    }))
+    defer server.Close()
 
-        return domulator.Response{Status: 200, Body: html}
-    })
-
-    test.LoadHTML(`
-        <div id="items" hx-get="/api/items" hx-trigger="load"></div>
-    `)
-    test.LoadScript("https://unpkg.com/htmx.org")
+    test := domulator.NewTest(t)
+    test.WithServer(server).Navigate("/")
 
     // Trigger infinite scroll
     test.ScrollIntoView("[hx-trigger='revealed']")
     test.WaitForCount(".item", 4)
 
-    test.AssertCount(".item", 4)
+    test.AssertElement(".item").Count(4)
 }
 ```
 
@@ -255,23 +254,27 @@ func TestHTMXInfiniteScroll(t *testing.T) {
 
 ```go
 func TestAlpineJSComponent(t *testing.T) {
+    server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        w.Write([]byte(`
+            <div x-data="{ count: 0 }">
+                <button @click="count++">Increment</button>
+                <span x-text="count"></span>
+            </div>
+            <script src="https://unpkg.com/alpinejs"></script>
+        `))
+    }))
+    defer server.Close()
+
     test := domulator.NewTest(t)
+    test.WithServer(server).Navigate("/")
 
-    test.LoadHTML(`
-        <div x-data="{ count: 0 }">
-            <button @click="count++">Increment</button>
-            <span x-text="count"></span>
-        </div>
-    `)
-    test.LoadScript("https://unpkg.com/alpinejs")
-
-    test.AssertText("span", "0")
+    test.AssertElement("span").HasText("0")
 
     test.Click("button")
-    test.AssertText("span", "1")
+    test.AssertElement("span").HasText("1")
 
     test.Click("button")
-    test.AssertText("span", "2")
+    test.AssertElement("span").HasText("2")
 }
 ```
 
@@ -279,24 +282,33 @@ func TestAlpineJSComponent(t *testing.T) {
 
 ```go
 func TestVanillaJSApp(t *testing.T) {
+    server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        switch r.URL.Path {
+        case "/":
+            w.Write([]byte(`
+                <input id="name" type="text">
+                <button id="greet">Greet</button>
+                <div id="message"></div>
+                <script src="/app.js"></script>
+            `))
+        case "/app.js":
+            w.Header().Set("Content-Type", "application/javascript")
+            w.Write([]byte(`
+                document.getElementById('greet').addEventListener('click', () => {
+                    const name = document.getElementById('name').value;
+                    document.getElementById('message').textContent = 'Hello, ' + name + '!';
+                });
+            `))
+        }
+    }))
+    defer server.Close()
+
     test := domulator.NewTest(t)
-
-    test.LoadHTML(`
-        <input id="name" type="text">
-        <button id="greet">Greet</button>
-        <div id="message"></div>
-    `)
-
-    test.ExecuteScript(`
-        document.getElementById('greet').addEventListener('click', () => {
-            const name = document.getElementById('name').value;
-            document.getElementById('message').textContent = 'Hello, ' + name + '!';
-        });
-    `)
+    test.WithServer(server).Navigate("/")
 
     test.Type("#name", "World")
     test.Click("#greet")
-    test.AssertText("#message", "Hello, World!")
+    test.AssertElement("#message").HasText("Hello, World!")
 }
 ```
 

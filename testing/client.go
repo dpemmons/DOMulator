@@ -146,9 +146,16 @@ func (c *HTTPClient) requestViaHandler(method, path string, body io.Reader) *Res
 // requestViaHTTP handles requests using the standard HTTP client
 func (c *HTTPClient) requestViaHTTP(method, path string, body io.Reader) *Response {
 	// Build full URL
-	fullURL := c.baseURL + path
-	if !strings.HasPrefix(path, "/") {
-		fullURL = c.baseURL + "/" + path
+	var fullURL string
+	if strings.HasPrefix(path, "http") {
+		// Path is already a full URL, use it directly
+		fullURL = path
+	} else {
+		// Path is relative, build full URL with base URL
+		fullURL = c.baseURL + path
+		if !strings.HasPrefix(path, "/") {
+			fullURL = c.baseURL + "/" + path
+		}
 	}
 
 	// Parse URL to validate

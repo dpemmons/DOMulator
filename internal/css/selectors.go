@@ -8,9 +8,17 @@ import (
 
 // SimpleSelector represents a single CSS selector part.
 type SimpleSelector struct {
-	tag     string
-	id      string
-	classes []string
+	tag        string
+	id         string
+	classes    []string
+	attributes []AttributeSelector
+}
+
+// AttributeSelector represents an attribute selector like [name=value]
+type AttributeSelector struct {
+	name     string
+	value    string
+	operator string // "=", "~=", "|=", "^=", "$=", "*=", or "" for just existence
 }
 
 // Selector represents a compiled CSS selector that may include descendant relationships.
@@ -37,12 +45,35 @@ func CompileSelector(selector string) (*Selector, error) {
 	return s, nil
 }
 
-// parseSimpleSelector parses a single selector part like "#id", ".class", "tag", "#id.class", etc.
+// parseSimpleSelector parses a single selector part like "#id", ".class", "tag", "#id.class", "[attr=value]", etc.
 func parseSimpleSelector(selectorPart string) (*SimpleSelector, error) {
 	s := &SimpleSelector{}
 	remaining := selectorPart
 
-	// 1. Extract ID (e.g., #myid)
+	// 1. Extract Attribute selectors (e.g., [name=value])
+	for {
+		startIdx := strings.Index(remaining, "[")
+		if startIdx == -1 {
+			break
+		}
+		endIdx := strings.Index(remaining[startIdx:], "]")
+		if endIdx == -1 {
+			break
+		}
+		endIdx += startIdx
+
+		attrStr := remaining[startIdx+1 : endIdx]
+		attr, err := parseAttributeSelector(attrStr)
+		if err != nil {
+			return nil, err
+		}
+		s.attributes = append(s.attributes, *attr)
+
+		// Remove the attribute selector from remaining
+		remaining = remaining[:startIdx] + remaining[endIdx+1:]
+	}
+
+	// 2. Extract ID (e.g., #myid)
 	if idx := strings.Index(remaining, "#"); idx != -1 {
 		idPart := remaining[idx+1:]
 		if spaceIdx := strings.IndexAny(idPart, ". "); spaceIdx != -1 {
@@ -54,7 +85,7 @@ func parseSimpleSelector(selectorPart string) (*SimpleSelector, error) {
 		}
 	}
 
-	// 2. Extract Classes (e.g., .myclass)
+	// 3. Extract Classes (e.g., .myclass)
 	classParts := strings.Split(remaining, ".")
 	if len(classParts) > 1 {
 		for _, class := range classParts[1:] {
@@ -65,10 +96,33 @@ func parseSimpleSelector(selectorPart string) (*SimpleSelector, error) {
 		remaining = classParts[0] // The part before the first dot
 	}
 
-	// 3. Extract Tag (the remaining part)
+	// 4. Extract Tag (the remaining part)
 	s.tag = strings.TrimSpace(remaining)
 
 	return s, nil
+}
+
+// parseAttributeSelector parses an attribute selector string like "name=value" or "class~=active"
+func parseAttributeSelector(attrStr string) (*AttributeSelector, error) {
+	attr := &AttributeSelector{}
+
+	// Check for different operators in order of length (longest first)
+	operators := []string{"~=", "|=", "^=", "$=", "*=", "="}
+
+	for _, op := range operators {
+		if idx := strings.Index(attrStr, op); idx != -1 {
+			attr.name = strings.TrimSpace(attrStr[:idx])
+			attr.operator = op
+			attr.value = strings.Trim(strings.TrimSpace(attrStr[idx+len(op):]), `"'`)
+			return attr, nil
+		}
+	}
+
+	// No operator found, it's just an attribute existence check
+	attr.name = strings.TrimSpace(attrStr)
+	attr.operator = ""
+	attr.value = ""
+	return attr, nil
 }
 
 // Matches checks if a given dom.Node matches this simple selector.
@@ -115,7 +169,57 @@ func (s *SimpleSelector) Matches(n dom.Node) bool {
 		}
 	}
 
+	// Check attributes
+	if len(s.attributes) > 0 {
+		if elem, ok := n.(*dom.Element); ok {
+			for _, attr := range s.attributes {
+				if !s.matchesAttribute(elem, attr) {
+					return false
+				}
+			}
+		} else {
+			return false // Only elements have attributes
+		}
+	}
+
 	return true
+}
+
+// matchesAttribute checks if an element matches an attribute selector
+func (s *SimpleSelector) matchesAttribute(elem *dom.Element, attr AttributeSelector) bool {
+	attrValue := elem.GetAttribute(attr.name)
+
+	switch attr.operator {
+	case "":
+		// Just check for existence
+		return elem.HasAttribute(attr.name)
+	case "=":
+		// Exact match
+		return attrValue == attr.value
+	case "~=":
+		// Word match (space-separated list)
+		words := strings.Fields(attrValue)
+		for _, word := range words {
+			if word == attr.value {
+				return true
+			}
+		}
+		return false
+	case "|=":
+		// Exact match or starts with value followed by hyphen
+		return attrValue == attr.value || strings.HasPrefix(attrValue, attr.value+"-")
+	case "^=":
+		// Starts with
+		return strings.HasPrefix(attrValue, attr.value)
+	case "$=":
+		// Ends with
+		return strings.HasSuffix(attrValue, attr.value)
+	case "*=":
+		// Contains
+		return strings.Contains(attrValue, attr.value)
+	default:
+		return false
+	}
 }
 
 // MatchesDescendant checks if a node matches a descendant selector.

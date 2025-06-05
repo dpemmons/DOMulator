@@ -144,10 +144,24 @@ func (db *DOMBindings) WrapDocument() *goja.Object {
 		return db.WrapNodeList(elements)
 	})
 
-	// Document properties - avoid infinite recursion by not wrapping elements here
-	doc.Set("documentElement", goja.Null())
-	doc.Set("body", goja.Null())
-	doc.Set("head", goja.Null())
+	// Document properties - set up the main document elements
+	if documentElement := db.document.DocumentElement(); documentElement != nil {
+		doc.Set("documentElement", db.WrapElement(documentElement))
+	} else {
+		doc.Set("documentElement", goja.Null())
+	}
+
+	if body := db.document.Body(); body != nil {
+		doc.Set("body", db.WrapElement(body))
+	} else {
+		doc.Set("body", goja.Null())
+	}
+
+	if head := db.document.Head(); head != nil {
+		doc.Set("head", db.WrapElement(head))
+	} else {
+		doc.Set("head", goja.Null())
+	}
 
 	// Cookie property - implement document.cookie getter/setter
 	doc.DefineAccessorProperty("cookie", db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
@@ -200,8 +214,21 @@ func (db *DOMBindings) WrapElement(element *dom.Element) *goja.Object {
 	elem.Set("innerHTML", element.InnerHTML())
 	elem.Set("outerHTML", element.OuterHTML())
 
-	// Dynamic textContent property - set current value
-	elem.Set("textContent", element.TextContent())
+	// Dynamic textContent property - set current value and add setter
+	elem.DefineAccessorProperty("textContent",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			return db.vm.ToValue(element.TextContent())
+		}),
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Setter
+			if len(call.Arguments) > 0 {
+				text := call.Arguments[0].String()
+				element.SetTextContent(text)
+			}
+			return goja.Undefined()
+		}),
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
 
 	// Attribute methods
 	elem.Set("getAttribute", func(call goja.FunctionCall) goja.Value {
@@ -243,11 +270,37 @@ func (db *DOMBindings) WrapElement(element *dom.Element) *goja.Object {
 		return goja.Undefined()
 	})
 
-	// Class methods
-	elem.Set("className", element.GetAttribute("class"))
+	// Class methods with getter/setter
+	elem.DefineAccessorProperty("className",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			return db.vm.ToValue(element.GetAttribute("class"))
+		}),
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Setter
+			if len(call.Arguments) > 0 {
+				className := call.Arguments[0].String()
+				element.SetAttribute("class", className)
+			}
+			return goja.Undefined()
+		}),
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
 
-	// ID property
-	elem.Set("id", element.GetAttribute("id"))
+	// ID property with getter/setter
+	elem.DefineAccessorProperty("id",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			return db.vm.ToValue(element.GetAttribute("id"))
+		}),
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Setter
+			if len(call.Arguments) > 0 {
+				id := call.Arguments[0].String()
+				element.SetAttribute("id", id)
+			}
+			return goja.Undefined()
+		}),
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
 
 	// Selector methods
 	elem.Set("querySelector", func(call goja.FunctionCall) goja.Value {
@@ -632,34 +685,8 @@ func (db *DOMBindings) addNodeMethods(obj *goja.Object, node dom.Node) {
 			panic(db.vm.NewTypeError("Invalid node"))
 		}
 
+		// Perform the actual DOM appendChild operation
 		node.AppendChild(child)
-
-		// Update the childNodes array
-		children := db.vm.NewArray()
-		childNodes := node.ChildNodes().ToSlice()
-		for i, childNode := range childNodes {
-			children.Set(strconv.Itoa(i), db.WrapNode(childNode))
-		}
-		children.Set("length", len(childNodes))
-		obj.Set("childNodes", children)
-
-		// Update navigation properties
-		if node.FirstChild() != nil {
-			obj.Set("firstChild", db.WrapNode(node.FirstChild()))
-		} else {
-			obj.Set("firstChild", goja.Null())
-		}
-
-		if node.LastChild() != nil {
-			obj.Set("lastChild", db.WrapNode(node.LastChild()))
-		} else {
-			obj.Set("lastChild", goja.Null())
-		}
-
-		// Update textContent after DOM modification for elements
-		if element, ok := node.(*dom.Element); ok {
-			obj.Set("textContent", element.TextContent())
-		}
 
 		// Update the child's parentNode property
 		childJS := call.Arguments[0].ToObject(db.vm)
@@ -667,7 +694,7 @@ func (db *DOMBindings) addNodeMethods(obj *goja.Object, node dom.Node) {
 			childJS.Set("parentNode", obj)
 		}
 
-		return call.Arguments[0] // Return the appended child
+		return call.Arguments[0] // Return the appended child (JavaScript wrapper)
 	})
 
 	obj.Set("removeChild", func(call goja.FunctionCall) goja.Value {

@@ -66,13 +66,27 @@ func (h *TestHarness) SetBaseURL(url string) *TestHarness {
 	return h
 }
 
-// Navigate loads a page from the specified URL and initializes the DOM
+// Navigate loads a page from the specified URL and initializes the DOM.
+// This method automatically loads and executes any <script> tags found in the HTML,
+// similar to how a real browser would behave.
 func (h *TestHarness) Navigate(url string) *TestHarness {
-	response := h.client.GET(url)
-	if response.Error != nil {
-		panic(fmt.Sprintf("Failed to navigate to %s: %v", url, response.Error))
+	// Resolve relative URLs using base URL if configured
+	fullURL := url
+	if h.config.BaseURL != "" && !strings.HasPrefix(url, "http") {
+		baseURL := strings.TrimSuffix(h.config.BaseURL, "/")
+		fullURL = baseURL + url
 	}
-	return h.LoadHTML(response.Body)
+
+	response := h.client.GET(fullURL) // Use the resolved full URL
+	if response.Error != nil {
+		panic(fmt.Sprintf("Failed to navigate to %s: %v", fullURL, response.Error))
+	}
+
+	// Load HTML and automatically load resources
+	h.LoadHTML(response.Body)
+	h.loadPageResources(fullURL)
+
+	return h
 }
 
 // GET performs a GET request and returns the response
@@ -151,4 +165,65 @@ func (h *TestHarness) SetHeader(key, value string) *TestHarness {
 	h.config.Headers[key] = value
 	h.client.SetHeader(key, value)
 	return h
+}
+
+// loadPageResources automatically loads and executes scripts found in the DOM,
+// similar to how a real browser would behave when loading a page.
+func (h *TestHarness) loadPageResources(baseURL string) {
+	if h.domulator == nil || h.domulator.document == nil {
+		return
+	}
+
+	// Find all script tags
+	scripts := h.domulator.document.QuerySelectorAll("script")
+
+	for i := 0; i < scripts.Length(); i++ {
+		script := scripts.Item(i).(*dom.Element)
+
+		// Check if script has a src attribute (external script)
+		if src := script.GetAttribute("src"); src != "" {
+			h.loadExternalScript(src, baseURL)
+		} else {
+			// Inline script - execute the content directly
+			scriptContent := script.TextContent()
+			if scriptContent != "" {
+				if err := h.ExecuteScript(scriptContent); err != nil {
+					// Log error but don't panic - scripts can fail in real browsers too
+					fmt.Printf("Warning: Failed to execute inline script: %v\n", err)
+				}
+			}
+		}
+	}
+}
+
+// loadExternalScript fetches and executes an external JavaScript file
+func (h *TestHarness) loadExternalScript(src, baseURL string) {
+	// Handle relative URLs
+	scriptURL := src
+	if !strings.HasPrefix(src, "http") {
+		if strings.HasSuffix(baseURL, "/") {
+			scriptURL = baseURL + strings.TrimPrefix(src, "/")
+		} else {
+			// Parse base URL to get the base path
+			if strings.Contains(baseURL, "/") {
+				lastSlash := strings.LastIndex(baseURL, "/")
+				baseURL = baseURL[:lastSlash+1]
+			} else {
+				baseURL = baseURL + "/"
+			}
+			scriptURL = baseURL + strings.TrimPrefix(src, "/")
+		}
+	}
+
+	// Fetch the script content
+	response := h.client.GET(scriptURL)
+	if response.Error != nil {
+		fmt.Printf("Warning: Failed to load script from %s: %v\n", scriptURL, response.Error)
+		return
+	}
+
+	// Execute the script
+	if err := h.ExecuteScript(response.Body); err != nil {
+		fmt.Printf("Warning: Failed to execute script from %s: %v\n", scriptURL, err)
+	}
 }
