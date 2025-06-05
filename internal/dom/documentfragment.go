@@ -7,9 +7,11 @@ import (
 // DocumentFragment represents a lightweight Document object whose contents are not part of the main document.
 type DocumentFragment struct {
 	nodeImpl
+	host *Element // Host element (null or an element in a different node tree)
 }
 
 // NewDocumentFragment creates a new DocumentFragment node.
+// This implements the constructor() as specified in WHATWG DOM Section 4.7.
 func NewDocumentFragment(doc *Document) *DocumentFragment {
 	df := &DocumentFragment{
 		nodeImpl: nodeImpl{
@@ -17,9 +19,22 @@ func NewDocumentFragment(doc *Document) *DocumentFragment {
 			nodeName:      "#document-fragment",
 			ownerDocument: doc,
 		},
+		host: nil, // Initially null unless otherwise stated
 	}
 	df.nodeImpl.self = df // Set the self reference
 	return df
+}
+
+// Host returns the host element of this DocumentFragment (null or an element in a different node tree).
+// Per WHATWG DOM spec: "A DocumentFragment node has an associated host (null or an element in a different node tree). It is null unless otherwise stated."
+func (df *DocumentFragment) Host() *Element {
+	return df.host
+}
+
+// SetHost sets the host element of this DocumentFragment.
+// This is used internally by the DOM implementation for template elements and shadow roots.
+func (df *DocumentFragment) SetHost(host *Element) {
+	df.host = host
 }
 
 // GetElementById returns the first element within the fragment's descendants whose ID is elementId.
@@ -229,10 +244,64 @@ func (df *DocumentFragment) matchesSimpleSelector(elem *Element, selector string
 	return matchSimpleSelector(elem, selector)
 }
 
+// IsHostIncludingInclusiveAncestorOf implements the "host-including inclusive ancestor" concept from WHATWG DOM spec.
+// An object A is a host-including inclusive ancestor of an object B, if either:
+// 1. A is an inclusive ancestor of B, or
+// 2. If B's root has a non-null host and A is a host-including inclusive ancestor of B's root's host.
+func (df *DocumentFragment) IsHostIncludingInclusiveAncestorOf(node Node) bool {
+	// First check if this DocumentFragment is an inclusive ancestor of node
+	if df.IsInclusiveAncestorOf(node) {
+		return true
+	}
+
+	// Get the root of node
+	root := node.GetRootNode(nil)
+
+	// If the root is a DocumentFragment with a non-null host
+	if rootFragment, ok := root.(*DocumentFragment); ok && rootFragment.host != nil {
+		// Check if this DocumentFragment is a host-including inclusive ancestor of the root's host
+		return df.IsHostIncludingInclusiveAncestorOf(rootFragment.host)
+	}
+
+	return false
+}
+
+// IsInclusiveAncestorOf checks if this DocumentFragment is an inclusive ancestor of the given node.
+// An inclusive ancestor includes the node itself.
+func (df *DocumentFragment) IsInclusiveAncestorOf(node Node) bool {
+	current := node
+	for current != nil {
+		if current == df {
+			return true
+		}
+		current = current.ParentNode()
+	}
+	return false
+}
+
+// getRootNode returns the root node of this DocumentFragment.
+// For DocumentFragments, this is typically the fragment itself unless it's in a tree.
+func (df *DocumentFragment) getRootNode() Node {
+	current := Node(df)
+	for current.ParentNode() != nil {
+		current = current.ParentNode()
+	}
+	return current
+}
+
 // CloneNode creates a copy of the document fragment using the spec-compliant cloning implementation.
 func (df *DocumentFragment) CloneNode(deep bool) Node {
 	// Use the spec-compliant cloning implementation
-	return CloneNodeSpec(df, deep)
+	cloned := CloneNodeSpec(df, deep)
+
+	// If this is a DocumentFragment, ensure the host is properly handled
+	if clonedFragment, ok := cloned.(*DocumentFragment); ok {
+		// The host is typically not cloned - it stays null for the clone
+		// This behavior may be overridden by specific use cases (like shadow DOM)
+		clonedFragment.SetHost(nil)
+	}
+
+	return cloned
 }
 
 // toJS is a placeholder for JavaScript binding.

@@ -391,12 +391,15 @@ func TestDocumentStructureHelpers(t *testing.T) {
 	body2 := doc2.CreateElement("body")
 	doc2.AppendChild(body2)
 
-	if doc2.DocumentElement() != nil {
-		t.Errorf("Expected no document element when no html element")
+	// DocumentElement should return the first element child, regardless of tag name
+	if doc2.DocumentElement() != body2 {
+		t.Errorf("Expected document element to be the body element when it's the only child")
 	}
+	// Head should be nil when no html element (Head looks specifically within html element)
 	if doc2.Head() != nil {
 		t.Errorf("Expected no head when no html element")
 	}
+	// Body should be nil when no html element (Body looks specifically within html element)
 	if doc2.Body() != nil {
 		t.Errorf("Expected no body when no html element")
 	}
