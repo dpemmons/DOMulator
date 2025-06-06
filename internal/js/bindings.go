@@ -1123,11 +1123,149 @@ func (db *DOMBindings) WrapNode(node dom.Node) *goja.Object {
 		}),
 		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
 
+	// Add CharacterData properties and methods for Text/Comment nodes
 	switch n := node.(type) {
 	case *dom.Text:
-		obj.Set("data", n.NodeValue())
+		// CharacterData properties
+		obj.DefineAccessorProperty("data",
+			db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+				return db.vm.ToValue(n.Data())
+			}),
+			db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+				if len(call.Arguments) > 0 {
+					data := call.Arguments[0].String()
+					n.SetData(data)
+				}
+				return goja.Undefined()
+			}),
+			goja.FLAG_FALSE, goja.FLAG_TRUE)
+
+		obj.DefineAccessorProperty("length",
+			db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+				return db.vm.ToValue(n.Length())
+			}),
+			goja.Undefined(),
+			goja.FLAG_FALSE, goja.FLAG_TRUE)
+
+		// CharacterData methods
+		obj.Set("appendData", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) > 0 {
+				data := call.Arguments[0].String()
+				n.AppendData(data)
+			}
+			return goja.Undefined()
+		})
+
+		obj.Set("insertData", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 2 {
+				panic(db.vm.NewTypeError("insertData requires offset and data"))
+			}
+			offset := int(call.Arguments[0].ToInteger())
+			data := call.Arguments[1].String()
+			n.InsertData(offset, data)
+			return goja.Undefined()
+		})
+
+		obj.Set("deleteData", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 2 {
+				panic(db.vm.NewTypeError("deleteData requires offset and count"))
+			}
+			offset := int(call.Arguments[0].ToInteger())
+			count := int(call.Arguments[1].ToInteger())
+			n.DeleteData(offset, count)
+			return goja.Undefined()
+		})
+
+		obj.Set("replaceData", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 3 {
+				panic(db.vm.NewTypeError("replaceData requires offset, count, and data"))
+			}
+			offset := int(call.Arguments[0].ToInteger())
+			count := int(call.Arguments[1].ToInteger())
+			data := call.Arguments[2].String()
+			n.ReplaceData(offset, count, data)
+			return goja.Undefined()
+		})
+
+		obj.Set("substringData", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 2 {
+				panic(db.vm.NewTypeError("substringData requires offset and count"))
+			}
+			offset := int(call.Arguments[0].ToInteger())
+			count := int(call.Arguments[1].ToInteger())
+			return db.vm.ToValue(n.SubstringData(offset, count))
+		})
+
 	case *dom.Comment:
-		obj.Set("data", n.NodeValue())
+		// CharacterData properties
+		obj.DefineAccessorProperty("data",
+			db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+				return db.vm.ToValue(n.Data())
+			}),
+			db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+				if len(call.Arguments) > 0 {
+					data := call.Arguments[0].String()
+					n.SetData(data)
+				}
+				return goja.Undefined()
+			}),
+			goja.FLAG_FALSE, goja.FLAG_TRUE)
+
+		obj.DefineAccessorProperty("length",
+			db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+				return db.vm.ToValue(n.Length())
+			}),
+			goja.Undefined(),
+			goja.FLAG_FALSE, goja.FLAG_TRUE)
+
+		// CharacterData methods
+		obj.Set("appendData", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) > 0 {
+				data := call.Arguments[0].String()
+				n.AppendData(data)
+			}
+			return goja.Undefined()
+		})
+
+		obj.Set("insertData", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 2 {
+				panic(db.vm.NewTypeError("insertData requires offset and data"))
+			}
+			offset := int(call.Arguments[0].ToInteger())
+			data := call.Arguments[1].String()
+			n.InsertData(offset, data)
+			return goja.Undefined()
+		})
+
+		obj.Set("deleteData", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 2 {
+				panic(db.vm.NewTypeError("deleteData requires offset and count"))
+			}
+			offset := int(call.Arguments[0].ToInteger())
+			count := int(call.Arguments[1].ToInteger())
+			n.DeleteData(offset, count)
+			return goja.Undefined()
+		})
+
+		obj.Set("replaceData", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 3 {
+				panic(db.vm.NewTypeError("replaceData requires offset, count, and data"))
+			}
+			offset := int(call.Arguments[0].ToInteger())
+			count := int(call.Arguments[1].ToInteger())
+			data := call.Arguments[2].String()
+			n.ReplaceData(offset, count, data)
+			return goja.Undefined()
+		})
+
+		obj.Set("substringData", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 2 {
+				panic(db.vm.NewTypeError("substringData requires offset and count"))
+			}
+			offset := int(call.Arguments[0].ToInteger())
+			count := int(call.Arguments[1].ToInteger())
+			return db.vm.ToValue(n.SubstringData(offset, count))
+		})
 	}
 
 	// Add common node methods
@@ -1335,12 +1473,38 @@ func (db *DOMBindings) addNodeMethods(obj *goja.Object, node dom.Node) {
 		return db.WrapNode(cloned)
 	})
 
-	// Navigation properties - avoid infinite recursion by setting to null initially
-	obj.Set("parentNode", goja.Null())
-	obj.Set("nextSibling", goja.Null())
-	obj.Set("previousSibling", goja.Null())
+	// Navigation properties - use getters for dynamic updates
+	obj.DefineAccessorProperty("parentNode",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			if parent := node.ParentNode(); parent != nil {
+				return db.WrapNode(parent)
+			}
+			return goja.Null()
+		}),
+		goja.Undefined(),                // No setter
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
 
-	// Set up navigation properties properly
+	obj.DefineAccessorProperty("nextSibling",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			if next := node.NextSibling(); next != nil {
+				return db.WrapNode(next)
+			}
+			return goja.Null()
+		}),
+		goja.Undefined(),                // No setter
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	obj.DefineAccessorProperty("previousSibling",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			if prev := node.PreviousSibling(); prev != nil {
+				return db.WrapNode(prev)
+			}
+			return goja.Null()
+		}),
+		goja.Undefined(),                // No setter
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	// Set up other navigation properties properly
 	db.updateNodeNavigationProperties(obj, node)
 }
 
@@ -2196,6 +2360,81 @@ func (db *DOMBindings) SetupGlobalAPIs() {
 		}
 
 		return db.createResizeObserver(callback)
+	})
+
+	// Test utility to trigger ResizeObserver callbacks
+	db.vm.Set("__triggerResizeObserver", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("__triggerResizeObserver requires target element"))
+		}
+
+		target := db.extractNodeFromJS(call.Arguments[0])
+		if target == nil {
+			panic(db.vm.NewTypeError("Invalid target element"))
+		}
+
+		// Optional resize info parameter
+		var resizeInfo *goja.Object
+		if len(call.Arguments) > 1 {
+			resizeInfo = call.Arguments[1].ToObject(db.vm)
+		}
+
+		// Get all registered ResizeObservers
+		globalResizeObservers := db.vm.Get("__resizeObservers")
+		if goja.IsUndefined(globalResizeObservers) || goja.IsNull(globalResizeObservers) {
+			return goja.Undefined()
+		}
+
+		if arr, ok := globalResizeObservers.(*goja.Object); ok {
+			if lengthVal := arr.Get("length"); lengthVal != nil {
+				length := int(lengthVal.ToInteger())
+				for i := 0; i < length; i++ {
+					if observerInfo := arr.Get(strconv.Itoa(i)); observerInfo != nil {
+						if info := observerInfo.ToObject(db.vm); info != nil {
+							// Check if this observer is watching the target
+							if elementsArr := info.Get("elements").(*goja.Object); elementsArr != nil {
+								if elemLengthVal := elementsArr.Get("length"); elemLengthVal != nil {
+									elemLength := int(elemLengthVal.ToInteger())
+									for j := 0; j < elemLength; j++ {
+										if elem := elementsArr.Get(strconv.Itoa(j)); elem != nil {
+											if node := db.extractNodeFromJS(elem); node == target {
+												// This observer is watching the target, fire callback
+												if callback := info.Get("callback"); callback != nil {
+													if cb, ok := goja.AssertFunction(callback); ok {
+														if observer := info.Get("observer"); observer != nil {
+															var entry *goja.Object
+															if resizeInfo != nil {
+																entry = db.createResizeObserverEntryFromInfo(target, resizeInfo)
+															} else {
+																entry = db.createResizeObserverEntry(target)
+															}
+
+															entries := db.vm.NewArray()
+															entries.Set("0", entry)
+															entries.Set("length", 1)
+
+															// Fire callback via microtask
+															if db.jsRuntime != nil && db.jsRuntime.EventLoop() != nil {
+																db.jsRuntime.EventLoop().QueueMicrotask(func() {
+																	_, _ = cb(goja.Undefined(), entries, observer)
+																}, "ResizeObserver")
+															}
+														}
+													}
+												}
+												break
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		return goja.Undefined()
 	})
 
 	// IntersectionObserver constructor
@@ -4259,6 +4498,27 @@ func (db *DOMBindings) createResizeObserver(callback goja.Callable) *goja.Object
 	var observedElements []dom.Node
 	var isActive = true
 
+	// Store the resize observer on the global object for test access
+	globalResizeObservers := db.vm.Get("__resizeObservers")
+	if goja.IsUndefined(globalResizeObservers) || goja.IsNull(globalResizeObservers) {
+		globalResizeObservers = db.vm.NewArray()
+		db.vm.Set("__resizeObservers", globalResizeObservers)
+	}
+
+	observerInfo := db.vm.NewObject()
+	observerInfo.Set("observer", obj)
+	observerInfo.Set("callback", callback)
+	observerInfo.Set("elements", db.vm.NewArray())
+
+	// Add to global list
+	if arr, ok := globalResizeObservers.(*goja.Object); ok {
+		if lengthVal := arr.Get("length"); lengthVal != nil {
+			length := int(lengthVal.ToInteger())
+			arr.Set(strconv.Itoa(length), observerInfo)
+			arr.Set("length", length+1)
+		}
+	}
+
 	obj.Set("observe", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 1 {
 			panic(db.vm.NewTypeError("observe requires a target element"))
@@ -4277,7 +4537,16 @@ func (db *DOMBindings) createResizeObserver(callback goja.Callable) *goja.Object
 		}
 		observedElements = append(observedElements, target)
 
-		// For testing, immediately fire a callback with mock entry
+		// Update global tracking
+		if elementsArr := observerInfo.Get("elements").(*goja.Object); elementsArr != nil {
+			if lengthVal := elementsArr.Get("length"); lengthVal != nil {
+				length := int(lengthVal.ToInteger())
+				elementsArr.Set(strconv.Itoa(length), db.WrapNode(target))
+				elementsArr.Set("length", length+1)
+			}
+		}
+
+		// For initial observation, immediately fire a callback with default entry
 		if isActive && db.jsRuntime != nil && db.jsRuntime.EventLoop() != nil {
 			db.jsRuntime.EventLoop().QueueMicrotask(func() {
 				entry := db.createResizeObserverEntry(target)
@@ -4356,6 +4625,32 @@ func (db *DOMBindings) createResizeObserverEntry(target dom.Node) *goja.Object {
 	contentBoxSize.Set("0", contentBox)
 	contentBoxSize.Set("length", 1)
 	entry.Set("contentBoxSize", contentBoxSize)
+
+	return entry
+}
+
+// createResizeObserverEntryFromInfo creates a ResizeObserverEntry from custom resize info
+func (db *DOMBindings) createResizeObserverEntryFromInfo(target dom.Node, resizeInfo *goja.Object) *goja.Object {
+	entry := db.vm.NewObject()
+
+	entry.Set("target", db.WrapNode(target))
+
+	// Extract data from resizeInfo
+	if contentRect := resizeInfo.Get("contentRect"); contentRect != nil {
+		entry.Set("contentRect", contentRect)
+	}
+
+	if borderBoxSize := resizeInfo.Get("borderBoxSize"); borderBoxSize != nil {
+		entry.Set("borderBoxSize", borderBoxSize)
+	}
+
+	if contentBoxSize := resizeInfo.Get("contentBoxSize"); contentBoxSize != nil {
+		entry.Set("contentBoxSize", contentBoxSize)
+	}
+
+	if devicePixelContentBoxSize := resizeInfo.Get("devicePixelContentBoxSize"); devicePixelContentBoxSize != nil {
+		entry.Set("devicePixelContentBoxSize", devicePixelContentBoxSize)
+	}
 
 	return entry
 }

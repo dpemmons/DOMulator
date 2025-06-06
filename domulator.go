@@ -23,12 +23,36 @@ type Test struct {
 	server  *httptest.Server
 }
 
+// TestConfig holds configuration options for the test harness
+type TestConfig = testingpkg.Config
+
+// ResizeOptions holds configuration for element resize operations
+type ResizeOptions = testingpkg.ResizeOptions
+
 // NewTest creates a new DOMulator test instance.
 // This is the main entry point for browser-like testing.
 func NewTest(t *testing.T) *Test {
 	return &Test{
 		t:       t,
 		harness: testingpkg.NewTestHarness(),
+	}
+}
+
+// NewTestWithConfig creates a new DOMulator test instance with custom configuration.
+// This allows you to specify window dimensions, default element sizes, and other options.
+//
+// Example:
+//
+//	test := domulator.NewTestWithConfig(t, &domulator.TestConfig{
+//		WindowWidth:  1024,
+//		WindowHeight: 768,
+//		ElementWidth: 200,
+//		ElementHeight: 150,
+//	})
+func NewTestWithConfig(t *testing.T, config *TestConfig) *Test {
+	return &Test{
+		t:       t,
+		harness: testingpkg.NewTestHarnessWithConfig(config),
 	}
 }
 
@@ -418,6 +442,34 @@ func (test *Test) Paste(selector string) *Test {
 // Resize simulates a resize event on the window/document.
 func (test *Test) Resize() *Test {
 	test.harness.Resize()
+	return test
+}
+
+// ResizeWindow sets the window dimensions and fires a resize event.
+// This updates window.innerWidth, window.innerHeight, etc. and then
+// dispatches a resize event on the window object.
+//
+// Example:
+//
+//	test.ResizeWindow(1024, 768)  // Changes to desktop size
+//	test.ResizeWindow(375, 667)   // Changes to mobile size
+func (test *Test) ResizeWindow(width, height int) *Test {
+	test.harness.ResizeWindow(width, height)
+	return test
+}
+
+// TriggerElementResize simulates an element resize for ResizeObserver testing.
+// This allows you to test ResizeObserver callbacks by triggering resize events
+// on specific elements with precise dimension control.
+//
+// Example:
+//
+//	test.TriggerElementResize("#sidebar", domulator.ResizeOptions{
+//		Width: 300, Height: 500,
+//		ContentWidth: 280, ContentHeight: 480,  // Optional: inner dimensions
+//	})
+func (test *Test) TriggerElementResize(selector string, options ResizeOptions) *Test {
+	test.harness.TriggerElementResize(selector, options)
 	return test
 }
 

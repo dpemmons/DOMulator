@@ -7,6 +7,14 @@ import (
 	"github.com/dpemmons/DOMulator/internal/dom"
 )
 
+// ResizeOptions holds configuration for element resize operations
+type ResizeOptions struct {
+	Width         int // Required: Outer width (boundingClientRect)
+	Height        int // Required: Outer height (boundingClientRect)
+	ContentWidth  int // Optional: Inner width (contentRect) - defaults to Width
+	ContentHeight int // Optional: Inner height (contentRect) - defaults to Height
+}
+
 // Click simulates a click event on the first element matching the selector
 func (h *TestHarness) Click(selector string) *TestHarness {
 	if h.domulator == nil {
@@ -812,6 +820,70 @@ func (h *TestHarness) Resize() *TestHarness {
 		
 		console.log('Window resize event dispatched');
 	`
+	h.ExecuteScript(script)
+	return h
+}
+
+// TriggerElementResize simulates an element resize for ResizeObserver testing
+func (h *TestHarness) TriggerElementResize(selector string, options ResizeOptions) *TestHarness {
+	if h.domulator == nil {
+		panic("no document loaded - call LoadHTML() or Navigate() first")
+	}
+
+	// Default content dimensions to outer dimensions if not specified
+	contentWidth := options.ContentWidth
+	contentHeight := options.ContentHeight
+	if contentWidth == 0 {
+		contentWidth = options.Width
+	}
+	if contentHeight == 0 {
+		contentHeight = options.Height
+	}
+
+	// Execute JavaScript to trigger ResizeObserver callbacks for the element
+	script := fmt.Sprintf(`
+		var element = document.querySelector('%s');
+		if (element) {
+			// Create resize information object
+			var resizeInfo = {
+				contentRect: {
+					x: 0,
+					y: 0,
+					width: %d,
+					height: %d,
+					top: 0,
+					right: %d,
+					bottom: %d,
+					left: 0
+				},
+				borderBoxSize: [{
+					inlineSize: %d,
+					blockSize: %d
+				}],
+				contentBoxSize: [{
+					inlineSize: %d,
+					blockSize: %d
+				}],
+				devicePixelContentBoxSize: [{
+					inlineSize: %d,
+					blockSize: %d
+				}]
+			};
+			
+			// Use the test utility to trigger ResizeObserver callbacks
+			if (typeof __triggerResizeObserver === 'function') {
+				__triggerResizeObserver(element, resizeInfo);
+				console.log('ResizeObserver callbacks triggered for', element.tagName, element.id);
+			} else {
+				console.log('ResizeObserver test utility not available');
+			}
+		} else {
+			console.log('Element not found for selector: %s');
+		}
+	`, selector, contentWidth, contentHeight, contentWidth, contentHeight,
+		options.Width, options.Height, contentWidth, contentHeight,
+		contentWidth, contentHeight, selector)
+
 	h.ExecuteScript(script)
 	return h
 }

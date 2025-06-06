@@ -33,6 +33,10 @@ type Config struct {
 	BaseURL        string
 	Headers        map[string]string
 	DebugMode      bool // Controls JavaScript console verbosity
+	WindowWidth    int  // Initial window width (default: 800)
+	WindowHeight   int  // Initial window height (default: 600)
+	ElementWidth   int  // Default element width for ResizeObserver (default: 100)
+	ElementHeight  int  // Default element height for ResizeObserver (default: 100)
 }
 
 // NewTestHarness creates a new test harness instance
@@ -40,6 +44,42 @@ func NewTestHarness() *TestHarness {
 	config := &Config{
 		DefaultTimeout: 5 * time.Second,
 		Headers:        make(map[string]string),
+		WindowWidth:    800,
+		WindowHeight:   600,
+		ElementWidth:   100,
+		ElementHeight:  100,
+	}
+
+	mocks := NewNetworkMocks()
+	client := NewHTTPClient(mocks)
+
+	return &TestHarness{
+		client: client,
+		mocks:  mocks,
+		config: config,
+	}
+}
+
+// NewTestHarnessWithConfig creates a new test harness instance with custom configuration
+func NewTestHarnessWithConfig(config *Config) *TestHarness {
+	// Set defaults for any missing values
+	if config.DefaultTimeout == 0 {
+		config.DefaultTimeout = 5 * time.Second
+	}
+	if config.Headers == nil {
+		config.Headers = make(map[string]string)
+	}
+	if config.WindowWidth == 0 {
+		config.WindowWidth = 800
+	}
+	if config.WindowHeight == 0 {
+		config.WindowHeight = 600
+	}
+	if config.ElementWidth == 0 {
+		config.ElementWidth = 100
+	}
+	if config.ElementHeight == 0 {
+		config.ElementHeight = 100
 	}
 
 	mocks := NewNetworkMocks()
@@ -109,6 +149,11 @@ func (h *TestHarness) Navigate(url string) *TestHarness {
 	// Create JavaScript runtime with DOM integration
 	runtime := js.New(document)
 
+	// Set window dimensions from config
+	if h.config.WindowWidth > 0 && h.config.WindowHeight > 0 {
+		runtime.SetWindowDimensions(h.config.WindowWidth, h.config.WindowHeight)
+	}
+
 	// Set up event loop for proper asynchronous behavior
 	runtime.SetupEventLoop(true) // Use virtual time for deterministic tests
 
@@ -156,6 +201,11 @@ func (h *TestHarness) LoadHTML(html string) *TestHarness {
 
 	// Create JavaScript runtime with DOM integration
 	runtime := js.New(document)
+
+	// Set window dimensions from config
+	if h.config.WindowWidth > 0 && h.config.WindowHeight > 0 {
+		runtime.SetWindowDimensions(h.config.WindowWidth, h.config.WindowHeight)
+	}
 
 	// Set up event loop for proper asynchronous behavior
 	runtime.SetupEventLoop(true) // Use virtual time for deterministic tests
@@ -278,6 +328,24 @@ func (h *TestHarness) ProcessPendingTimers() {
 
 	// Process one task if available (timers, animation frames, etc.)
 	eventLoop.ProcessNextTask()
+}
+
+// ResizeWindow sets the window dimensions and fires a resize event
+func (h *TestHarness) ResizeWindow(width, height int) *TestHarness {
+	if h.domulator == nil || h.domulator.runtime == nil {
+		panic("no document loaded - call LoadHTML() or Navigate() first")
+	}
+
+	// Update window dimensions in JavaScript runtime
+	h.domulator.runtime.SetWindowDimensions(width, height)
+
+	// Fire resize event on window
+	h.ExecuteScript(`
+		var event = new Event('resize', { bubbles: false, cancelable: false });
+		window.dispatchEvent(event);
+	`)
+
+	return h
 }
 
 // loadPageResources automatically loads and executes scripts found in the DOM,

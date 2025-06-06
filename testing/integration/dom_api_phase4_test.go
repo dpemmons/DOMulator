@@ -272,14 +272,16 @@ func TestDOMAPIPhase4IntegrationScenarios(t *testing.T) {
 		
 		// Complex scenario: Clone, compare, and manipulate
 		const clonedSection = section1.cloneNode(true);
-		clonedSection.id = 'cloned-section';
 		
-		// Test node relationships after cloning
+		// Test node relationships after cloning (BEFORE modification)
 		const originalIsEqual = section1.isEqualNode(clonedSection);
 		const originalIsSame = section1.isSameNode(clonedSection);
 		
 		console.log("Original equals cloned:", originalIsEqual);
 		console.log("Original same as cloned:", originalIsSame);
+		
+		// Now modify the clone
+		clonedSection.id = 'cloned-section';
 		
 		// Test containment relationships
 		const containerContainsSection1 = container.contains(section1);

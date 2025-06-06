@@ -130,6 +130,22 @@ func (r *Runtime) setupGlobals() {
 	r.window.Set("navigator", r.vm.NewObject())
 	r.window.Set("screen", r.vm.NewObject())
 	r.window.Set("history", r.vm.NewObject())
+
+	// Set default window dimensions
+	r.window.Set("innerWidth", 800)
+	r.window.Set("innerHeight", 600)
+	r.window.Set("outerWidth", 800)
+	r.window.Set("outerHeight", 600)
+}
+
+// SetWindowDimensions sets the window dimensions for testing
+func (r *Runtime) SetWindowDimensions(width, height int) {
+	if r.window != nil {
+		r.window.Set("innerWidth", width)
+		r.window.Set("innerHeight", height)
+		r.window.Set("outerWidth", width)
+		r.window.Set("outerHeight", height)
+	}
 }
 
 // setupConsole initializes the console object

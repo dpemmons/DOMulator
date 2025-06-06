@@ -1249,6 +1249,71 @@ internal/js/
 
 This event loop implementation will position DOMulator as the most comprehensive and accurate DOM emulation solution available, with true browser-level compatibility for modern web frameworks.
 
+## Event System Testing Patterns
+
+### **End-to-End Event Flow Validation Pattern**
+DOMulator uses a clever pattern to validate that events flow correctly from Go through the DOM to JavaScript event listeners and back:
+
+```javascript
+// JavaScript sets DOM attributes when events are received
+function markEvent(element, eventType) {
+    element.setAttribute('data-last-event', eventType);
+    element.setAttribute('data-event-count', 
+        (parseInt(element.getAttribute('data-event-count') || '0') + 1).toString());
+    console.log('Event received:', eventType, 'on', element.id || element.tagName);
+}
+
+// Add listeners that mark when events are received
+element.addEventListener('click', () => markEvent(element, 'click'));
+element.addEventListener('keydown', () => markEvent(element, 'keydown'));
+// ... etc for all event types
+```
+
+```go
+// Go triggers the event
+test.Click("#button")
+
+// Go verifies JavaScript received the event by checking DOM attributes
+test.AssertElement("#button").HasAttribute("data-last-event", "click")
+```
+
+**Key Insights:**
+- **DOM as Communication Channel**: Uses DOM attributes as a verifiable communication channel between JavaScript and Go
+- **Event Count Tracking**: Tracks how many times each event fired with `data-event-count`
+- **Comprehensive Coverage**: Tests 25+ event types using this same pattern
+- **Real-World Validation**: Proves events work in realistic scenarios like drag-and-drop sequences
+
+### **Async Event Testing Patterns**
+For asynchronous JavaScript event handling, DOMulator provides deterministic control:
+
+```go
+// Setup async event listener in JavaScript
+test.LoadHTML(`<script>
+    setTimeout(() => {
+        document.getElementById('btn').addEventListener('click', () => {
+            document.body.setAttribute('data-clicked', 'true');
+        });
+    }, 100);
+</script>`)
+
+// Control time to execute the setTimeout
+test.AdvanceTime(100 * time.Millisecond)
+test.ProcessPendingTimers()
+test.FlushMicrotasks()
+
+// Now the listener is attached, trigger event
+test.Click("#btn")
+
+// Verify async event was processed
+test.AssertElement("body").HasAttribute("data-clicked", "true")
+```
+
+**Async Testing Benefits:**
+- **Deterministic Execution**: No timing-based flakiness in tests
+- **Complete Control**: Precise control over when timers and microtasks execute
+- **Real-World Scenarios**: Test complex async patterns found in modern web apps
+- **Debugging Support**: Step through async operations predictably
+
 ## Future Extensibility Patterns
 
 ### **Plugin Architecture for Browser APIs**

@@ -209,6 +209,41 @@ test.WaitFor(func() bool {
 test.WaitForNetworkIdle()
 ```
 
+#### Time Manipulation & Advanced Testing
+
+DOMulator provides precise control over JavaScript timing for testing async behavior:
+
+```go
+// Control JavaScript timers
+test.AdvanceTime(100 * time.Millisecond)  // Move time forward
+test.ProcessPendingTimers()               // Execute scheduled timers
+test.FlushMicrotasks()                   // Process microtask queue
+
+// ResizeObserver testing
+test.TriggerElementResize("#sidebar", domulator.ResizeOptions{
+    Width: 300, Height: 500,
+    ContentWidth: 280, ContentHeight: 480,  // Optional: inner dimensions
+})
+
+// Window resize
+test.ResizeWindow(1024, 768)  // Changes window dimensions and fires resize event
+test.Resize()                 // Fires window resize event only (no dimension change)
+
+// Custom initial window size
+test := domulator.NewTestWithConfig(t, &domulator.TestConfig{
+    WindowWidth:  1280,
+    WindowHeight: 720,
+    ElementWidth: 200,   // Default element dimensions for ResizeObserver
+    ElementHeight: 150,
+})
+```
+
+**Key Principles:**
+- `TriggerElementResize()` only affects the specific element you target
+- No automatic cascading - explicitly resize each element you want to test
+- `Resize()` only fires window events, not ResizeObserver callbacks
+- `ResizeWindow()` changes window dimensions AND fires resize event
+
 ## 🔌 Framework Examples
 
 ### HTMX
