@@ -127,6 +127,208 @@ func TestCloneNodeSpec(t *testing.T) {
 	})
 }
 
+func TestCloneNode_ShadowRootProhibition(t *testing.T) {
+	doc := NewDocument()
+	host := doc.CreateElement("div")
+	shadowRoot, err := host.AttachShadow(ShadowRootInit{Mode: ShadowRootModeOpen})
+	if err != nil {
+		t.Fatalf("Failed to attach shadow root: %v", err)
+	}
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Errorf("Cloning a ShadowRoot should panic")
+			return
+		}
+		domErr, ok := r.(*DOMException)
+		if !ok {
+			t.Errorf("Panic was not a DOMException, got %T", r)
+			return
+		}
+		if domErr.Name() != "NotSupportedError" {
+			t.Errorf("Expected NotSupportedError, got %s", domErr.Name())
+		}
+	}()
+
+	// This should panic
+	shadowRoot.CloneNode(false)
+}
+
+func TestCloneNode_ElementWithShadowRoot(t *testing.T) {
+	doc := NewDocument()
+	originalHost := doc.CreateElement("div")
+	originalHost.SetAttribute("id", "host")
+
+	// Attach a clonable shadow root
+	originalShadowInit := ShadowRootInit{
+		Mode:           ShadowRootModeOpen,
+		DelegatesFocus: true,
+		Clonable:       true,
+		Serializable:   true,
+		SlotAssignment: SlotAssignmentManual,
+	}
+	originalSR, err := originalHost.AttachShadow(originalShadowInit)
+	if err != nil {
+		t.Fatalf("Failed to attach original shadow root: %v", err)
+	}
+	// Manually set declarative and customElementRegistry for testing their transfer
+	originalSR.declarative = true
+	originalSR.customElementRegistry = NewCustomElementRegistry(doc)
+
+	shadowText := NewText("Shadow Content", doc)
+	shadowSpan := NewElement("span", doc)
+	shadowSpan.AppendChild(NewText("Inside Span", doc))
+	originalSR.AppendChild(shadowText)
+	originalSR.AppendChild(shadowSpan)
+
+	t.Run("Clone host with clonable ShadowRoot", func(t *testing.T) {
+		clonedHostNode := originalHost.CloneNode(true) // Deep clone the host
+
+		clonedHost, ok := clonedHostNode.(*Element)
+		if !ok {
+			t.Fatalf("Cloned host is not an Element")
+		}
+		if clonedHost == originalHost {
+			t.Fatal("Cloned host is the same instance as original")
+		}
+
+		clonedSR := clonedHost.ShadowRoot()
+		if clonedSR == nil {
+			t.Fatal("Cloned host does not have a shadow root")
+		}
+		if clonedSR == originalSR {
+			t.Fatal("Cloned shadow root is the same instance as original")
+		}
+
+		// Verify properties of the cloned shadow root
+		if clonedSR.Mode() != originalSR.Mode() {
+			t.Errorf("Expected cloned SR mode %s, got %s", originalSR.Mode(), clonedSR.Mode())
+		}
+		if clonedSR.DelegatesFocus() != originalSR.DelegatesFocus() {
+			t.Errorf("Expected cloned SR delegatesFocus %t, got %t", originalSR.DelegatesFocus(), clonedSR.DelegatesFocus())
+		}
+		if !clonedSR.Clonable() { // Spec: "Attach a shadow root with ... true (for clonable)..."
+			t.Error("Expected cloned SR to be clonable (true by spec for this operation)")
+		}
+		if clonedSR.Serializable() != originalSR.Serializable() {
+			t.Errorf("Expected cloned SR serializable %t, got %t", originalSR.Serializable(), clonedSR.Serializable())
+		}
+		if clonedSR.SlotAssignment() != originalSR.SlotAssignment() {
+			t.Errorf("Expected cloned SR slotAssignment %s, got %s", originalSR.SlotAssignment(), clonedSR.SlotAssignment())
+		}
+		if clonedSR.customElementRegistry != originalSR.customElementRegistry {
+			t.Error("Expected cloned SR customElementRegistry to be copied")
+		}
+		if clonedSR.declarative != originalSR.declarative {
+			t.Errorf("Expected cloned SR declarative %t, got %t", originalSR.declarative, clonedSR.declarative)
+		}
+
+		// Verify children of the cloned shadow root
+		clonedSRChildren := clonedSR.ChildNodes()
+		if clonedSRChildren.Length() != 2 {
+			t.Fatalf("Expected 2 children in cloned shadow root, got %d", clonedSRChildren.Length())
+		}
+		if clonedSRChildren.Item(0).NodeValue() != "Shadow Content" {
+			t.Errorf("Incorrect text node in cloned shadow root: %s", clonedSRChildren.Item(0).NodeValue())
+		}
+		clonedSRSpan, ok := clonedSRChildren.Item(1).(*Element)
+		if !ok || clonedSRSpan.TagName() != "SPAN" {
+			t.Errorf("Incorrect element node in cloned shadow root")
+		}
+		if clonedSRSpan.FirstChild().NodeValue() != "Inside Span" {
+			t.Errorf("Incorrect text in span within cloned shadow root")
+		}
+		if clonedSRChildren.Item(0).OwnerDocument() != clonedHost.OwnerDocument() {
+			t.Error("Cloned shadow child has incorrect owner document")
+		}
+	})
+
+	t.Run("Clone host with non-clonable ShadowRoot", func(t *testing.T) {
+		nonClonableHost := NewElement("div", doc)
+		nonClonableSRInit := ShadowRootInit{Mode: ShadowRootModeOpen, Clonable: false}
+		_, err := nonClonableHost.AttachShadow(nonClonableSRInit)
+		if err != nil {
+			t.Fatalf("Failed to attach non-clonable shadow root: %v", err)
+		}
+
+		clonedHostNode := nonClonableHost.CloneNode(true)
+		clonedHost := clonedHostNode.(*Element)
+
+		if clonedHost.ShadowRoot() != nil {
+			t.Error("Non-clonable shadow root should not be cloned")
+		}
+	})
+}
+
+func TestCloneNode_ElementIsValue(t *testing.T) {
+	doc := NewDocument()
+	original := doc.CreateElement("button", ElementCreationOptions{Is: "custom-button"})
+	original.SetAttribute("id", "mybtn")
+
+	clonedNode := original.CloneNode(false)
+	clonedElem, ok := clonedNode.(*Element)
+	if !ok {
+		t.Fatalf("Cloned node is not an element")
+	}
+
+	if clonedElem.IsValue() != "custom-button" {
+		t.Errorf("Expected 'is' value 'custom-button', got '%s'", clonedElem.IsValue())
+	}
+	if clonedElem.GetAttribute("id") != "mybtn" { // Ensure other parts are still cloned
+		t.Errorf("Attribute 'id' not cloned correctly")
+	}
+}
+
+func TestCloneNode_DocumentProperties(t *testing.T) {
+	originalDoc := NewDocument()
+	originalDoc.url = "http://example.com/original"
+	originalDoc.documentURI = "http://example.com/original"
+	originalDoc.contentType = "text/html"
+	originalDoc.characterSet = "ISO-8859-1"
+	originalDoc.charset = "ISO-8859-1"
+	originalDoc.inputEncoding = "ISO-8859-1"
+	originalDoc.mode = "quirks" // Should result in CompatMode "BackCompat"
+	originalDoc.documentType = "html"
+	originalDoc.customElementRegistry = NewCustomElementRegistry(originalDoc)
+
+	el := originalDoc.CreateElement("div")
+	originalDoc.AppendChild(el)
+
+	clonedDocNode := originalDoc.CloneNode(true) // Deep clone
+	clonedDoc, ok := clonedDocNode.(*Document)
+	if !ok {
+		t.Fatalf("Cloned node is not a Document")
+	}
+
+	if clonedDoc.URL() != originalDoc.URL() {
+		t.Errorf("Expected URL '%s', got '%s'", originalDoc.URL(), clonedDoc.URL())
+	}
+	if clonedDoc.ContentType() != originalDoc.ContentType() {
+		t.Errorf("Expected ContentType '%s', got '%s'", originalDoc.ContentType(), clonedDoc.ContentType())
+	}
+	if clonedDoc.CharacterSet() != originalDoc.CharacterSet() {
+		t.Errorf("Expected CharacterSet '%s', got '%s'", originalDoc.CharacterSet(), clonedDoc.CharacterSet())
+	}
+	if clonedDoc.CompatMode() != "BackCompat" {
+		t.Errorf("Expected CompatMode 'BackCompat', got '%s'", clonedDoc.CompatMode())
+	}
+	if clonedDoc.documentType != originalDoc.documentType {
+		t.Errorf("Expected documentType (type) '%s', got '%s'", originalDoc.documentType, clonedDoc.documentType)
+	}
+	if clonedDoc.CustomElementRegistry() == nil {
+		t.Error("Expected CustomElementRegistry to be copied, but it was nil")
+	} else if clonedDoc.CustomElementRegistry() == originalDoc.CustomElementRegistry() {
+		if clonedDoc.CustomElementRegistry().Document() != clonedDoc {
+			t.Error("Cloned document's CustomElementRegistry is not associated with the cloned document")
+		}
+	}
+
+	if clonedDoc.ChildNodes().Length() != 1 {
+		t.Errorf("Expected 1 child for deep-cloned document, got %d", clonedDoc.ChildNodes().Length())
+	}
+}
+
 func TestElementCloning(t *testing.T) {
 	doc := NewDocument()
 
@@ -245,6 +447,7 @@ func TestElementCloning(t *testing.T) {
 			t.Errorf("Expected span to have 1 child, got %d", spanChildren.Length())
 		}
 
+		//TODO(dpemmons) this ends up empty!
 		spanChild := spanChildren.Item(0)
 		if spanChild.NodeValue() != "World" {
 			t.Errorf("Expected span child value 'World', got %q", spanChild.NodeValue())
@@ -563,7 +766,7 @@ func TestCDATASectionCloning(t *testing.T) {
 	})
 }
 
-func TestNamespacePreservationInCloning(t *testing.T) {
+func TestCloneNode_ElementWithNamespace(t *testing.T) { // Renamed for clarity and consistency
 	doc := NewDocument()
 
 	t.Run("Element with namespace cloning", func(t *testing.T) {
@@ -594,4 +797,45 @@ func TestNamespacePreservationInCloning(t *testing.T) {
 			t.Errorf("Expected width '100', got %q", clonedElem.GetAttribute("width"))
 		}
 	})
+}
+
+func TestCloneNode_AttrNamespace(t *testing.T) {
+	doc := NewDocument()
+	// elem := doc.CreateElement("div") // Owner element not strictly needed for Attr.CloneNode
+
+	originalAttr, err := NewAttrNS("http://www.example.com/ns", "ex:myattr", "value123", doc)
+	if err != nil {
+		t.Fatalf("Failed to create namespaced Attr: %v", err)
+	}
+	// Setting ownerElement is usually done when attribute is added to an element's NamedNodeMap
+	// For direct Attr.CloneNode testing, it's not essential but good for completeness if it were part of Attr struct.
+	// originalAttr.ownerElement = elem // This field is not directly settable on Attr from outside package
+
+	clonedNode := originalAttr.CloneNode(false)
+	clonedAttr, ok := clonedNode.(*Attr)
+	if !ok {
+		t.Fatalf("Cloned node is not an Attr, got %T", clonedNode)
+	}
+
+	if clonedAttr.NamespaceURI() != "http://www.example.com/ns" {
+		t.Errorf("Expected NamespaceURI '%s', got '%s'", "http://www.example.com/ns", clonedAttr.NamespaceURI())
+	}
+	if clonedAttr.Prefix() != "ex" {
+		t.Errorf("Expected Prefix '%s', got '%s'", "ex", clonedAttr.Prefix())
+	}
+	if clonedAttr.LocalName() != "myattr" {
+		t.Errorf("Expected LocalName '%s', got '%s'", "myattr", clonedAttr.LocalName())
+	}
+	if clonedAttr.Value() != "value123" {
+		t.Errorf("Expected Value '%s', got '%s'", "value123", clonedAttr.Value())
+	}
+	if clonedAttr.Name() != "ex:myattr" {
+		t.Errorf("Expected Name (NodeName) '%s', got '%s'", "ex:myattr", clonedAttr.Name())
+	}
+	if clonedAttr.OwnerDocument() != doc {
+		t.Error("Cloned Attr has incorrect owner document")
+	}
+	if clonedAttr == originalAttr {
+		t.Error("Cloned Attr is the same instance as original")
+	}
 }

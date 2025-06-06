@@ -189,12 +189,17 @@ func TestEventPropagationOrder(t *testing.T) {
 	// This test will be more comprehensive once the full propagation logic is in Node.DispatchEvent
 	// For now, it tests the basic AT_TARGET phase.
 
-	grandparent := NewMockNode(ElementNode, "div")
-	parent := NewMockNode(ElementNode, "span")
-	child := NewMockNode(ElementNode, "p")
+	doc := NewDocument()
+	grandparent := doc.CreateElement("div")
+	parent := doc.CreateElement("span")
+	child := doc.CreateElement("p")
 
-	grandparent.AppendChild(parent) // Now MockNode implements AppendChild
-	parent.AppendChild(child)       // Now MockNode implements AppendChild
+	// It's important to append to the document as well for a complete hierarchy,
+	// though for this specific test's simplified dispatch, it might not be strictly necessary.
+	// However, good practice for future-proofing if dispatch logic becomes more complex.
+	doc.AppendChild(grandparent)
+	grandparent.AppendChild(parent)
+	parent.AppendChild(child)
 
 	var log []string
 	listener := func(nodeName string) func(Event) {
@@ -209,10 +214,45 @@ func TestEventPropagationOrder(t *testing.T) {
 	child.AddEventListener("test", listener("child"))
 
 	e := NewEvent("test", true, true)
-	child.DispatchEvent(e) // Dispatching on child
 
-	// Expected order for simplified mock dispatch (only AT_TARGET for the target itself)
-	expected := []string{"child-AT_TARGET"}
+	// For this test, we are using MockNode's simplified DispatchEvent.
+	// If we were testing full propagation on actual Element nodes, we'd use:
+	// child.(*Element).DispatchEvent(e)
+	// However, MockNode's DispatchEvent is sufficient for checking AT_TARGET phase on the mock.
+	// The structural changes above ensure AppendChild works.
+	// To test full propagation, the DispatchEvent on child (which is now an Element)
+	// would use the nodeImpl.DispatchEvent, which *does* full propagation.
+
+	// If using MockNode's dispatch:
+	// mockChild := NewMockNode(ElementNode, "p") // Or adapt existing child if it were still MockNode
+	// mockChild.AddEventListener("test", listener("child"))
+	// mockChild.DispatchEvent(e)
+	// expected := []string{"child-AT_TARGET"}
+
+	// If using Element's dispatch (which uses nodeImpl.DispatchEvent for full propagation):
+	// Reset log or adjust expectations based on full propagation path if dispatching from child.
+	// For now, let's assume we want to test the full propagation by dispatching on child.
+	// The actual dispatch will be child.(*Element).nodeImpl.DispatchEvent(e)
+	// The listeners are attached to grandparent, parent, child which are now *Element.
+	// nodeImpl.DispatchEvent will handle the propagation.
+
+	child.DispatchEvent(e) // Dispatching on child (now an Element)
+
+	// Expected order for full propagation (Capture -> Target -> Bubble)
+	// This expectation needs to be updated based on the actual propagation logic in nodeImpl.DispatchEvent
+	// Current nodeImpl.DispatchEvent:
+	// 1. Path: [child, parent, grandparent, document]
+	// 2. Capture: grandparent, parent (stops at child)
+	// 3. Target: child
+	// 4. Bubble: parent, grandparent
+	expected := []string{
+		"grandparent-CAPTURING_PHASE",
+		"parent-CAPTURING_PHASE",
+		"child-CAPTURING_PHASE",
+		"child-AT_TARGET",
+		"parent-BUBBLING_PHASE",
+		"grandparent-BUBBLING_PHASE",
+	}
 	if len(log) != len(expected) {
 		t.Fatalf("Expected %d events, got %d: %v", len(expected), len(log), log)
 	}

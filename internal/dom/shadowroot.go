@@ -677,6 +677,12 @@ func TraverseShadowIncludingTreeOrder(root Node, visitor func(Node) bool) {
 	}
 }
 
+// CloneNode implements the cloneNode method for ShadowRoot
+// Per WHATWG DOM spec: "If this is a shadow root, then throw a 'NotSupportedError' DOMException."
+func (sr *ShadowRoot) CloneNode(deep bool) Node {
+	panic(NewNotSupportedError("ShadowRoot nodes cannot be cloned"))
+}
+
 // String representation for debugging
 func (sr *ShadowRoot) String() string {
 	var mode string

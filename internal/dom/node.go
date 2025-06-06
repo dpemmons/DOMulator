@@ -1500,6 +1500,8 @@ func insertNode(node, parent, child Node, suppressObservers bool) {
 				p.nodeImpl.childNodes = append(p.nodeImpl.childNodes, nodeToInsert)
 			case *DocumentFragment:
 				p.nodeImpl.childNodes = append(p.nodeImpl.childNodes, nodeToInsert)
+			case *ShadowRoot: // Added case for ShadowRoot
+				p.DocumentFragment.nodeImpl.childNodes = append(p.DocumentFragment.nodeImpl.childNodes, nodeToInsert)
 			default:
 				// This shouldn't happen if validation worked
 				panic("unsupported parent type for insertion")
@@ -1525,6 +1527,13 @@ func insertNode(node, parent, child Node, suppressObservers bool) {
 				for i, c := range p.nodeImpl.childNodes {
 					if c == child {
 						p.nodeImpl.childNodes = append(p.nodeImpl.childNodes[:i], append([]Node{nodeToInsert}, p.nodeImpl.childNodes[i:]...)...)
+						break
+					}
+				}
+			case *ShadowRoot: // Added case for ShadowRoot
+				for i, c := range p.DocumentFragment.nodeImpl.childNodes {
+					if c == child {
+						p.DocumentFragment.nodeImpl.childNodes = append(p.DocumentFragment.nodeImpl.childNodes[:i], append([]Node{nodeToInsert}, p.DocumentFragment.nodeImpl.childNodes[i:]...)...)
 						break
 					}
 				}
@@ -1646,6 +1655,13 @@ func removeNode(node Node, suppressObservers bool) {
 				break
 			}
 		}
+	case *ShadowRoot: // Added case for ShadowRoot
+		for i, child := range p.DocumentFragment.nodeImpl.childNodes {
+			if child == node {
+				p.DocumentFragment.nodeImpl.childNodes = append(p.DocumentFragment.nodeImpl.childNodes[:i], p.DocumentFragment.nodeImpl.childNodes[i+1:]...)
+				break
+			}
+		}
 	default:
 		// This shouldn't happen if validation worked
 		panic("unsupported parent type for removal")
@@ -1748,11 +1764,27 @@ func replaceAllWithNode(node, parent Node) {
 
 // adoptNodeIntoDocument adopts a node into a document
 func adoptNodeIntoDocument(node Node, doc *Document) {
-	node.setOwnerDocument(doc)
-	// Recursively adopt children
-	children := node.ChildNodes()
-	for i := 0; i < children.Length(); i++ {
-		adoptNodeIntoDocument(children.Item(i), doc)
+	// DOM Standard 4.2.2 "To adopt a node into a document, run these steps:"
+	// 1. Let oldDocument be node's node document.
+	oldDocument := node.OwnerDocument()
+
+	// 2. If node's parent is not null, then remove node from its parent.
+	if oldParent := node.ParentNode(); oldParent != nil {
+		// Directly call removeNode. The 'remove' algorithm (which removeNode implements)
+		// handles setting parent to null and queuing mutation records if not suppressed.
+		// Passing 'false' for suppressObservers to ensure the removal is observable,
+		// consistent with how oldParent.RemoveChild(node) would behave.
+		removeNode(node, false)
+	}
+
+	// 3. If document is not oldDocument, then: (Further steps for cross-document adoption)
+	if doc != oldDocument {
+		node.setOwnerDocument(doc)
+		// Recursively adopt children only if moving to a different document
+		children := node.ChildNodes()
+		for i := 0; i < children.Length(); i++ {
+			adoptNodeIntoDocument(children.Item(i), doc)
+		}
 	}
 }
 

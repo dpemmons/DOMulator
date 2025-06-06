@@ -25,7 +25,8 @@ func cloneNode(node Node, options CloneOptions) Node {
 	copy := cloneSingleNode(node, options.Document, options.FallbackRegistry)
 
 	// Run any cloning steps defined for node in other applicable specifications
-	// TODO: Implement cloning steps hooks for extensibility
+	runCloningSteps(node, copy, options.Subtree)
+	// TODO: Implement cloning steps hooks for extensibility (now called via runCloningSteps)
 
 	// If parent is non-null, then append copy to parent
 	if options.Parent != nil {
@@ -50,10 +51,52 @@ func cloneNode(node Node, options CloneOptions) Node {
 		}
 	}
 
-	// TODO: Handle shadow DOM cloning when shadow DOM is implemented
+	// Handle shadow DOM cloning per spec
 	// If node is an element, node is a shadow host, and node's shadow root's clonable is true:
-	// - Assert: copy is not a shadow host
-	// - Attach shadow root and clone shadow children
+	if originalElement, ok := node.(*Element); ok {
+		if originalShadowRoot := originalElement.ShadowRoot(); originalShadowRoot != nil && originalShadowRoot.Clonable() {
+			copiedElement, ok := copy.(*Element)
+			if !ok {
+				// This should not happen if cloneSingleNode works correctly for Elements
+				panic(fmt.Sprintf("Cloned node is not an Element when original was, during shadow DOM cloning. Original: %T, Cloned: %T", node, copy))
+			}
+			if copiedElement.ShadowRoot() != nil {
+				panic(NewInvalidStateError("Copy is already a shadow host during shadow root cloning."))
+			}
+
+			initOptions := ShadowRootInit{
+				Mode:           originalShadowRoot.Mode(),
+				SlotAssignment: originalShadowRoot.SlotAssignment(),
+				DelegatesFocus: originalShadowRoot.DelegatesFocus(),
+				Clonable:       true, // Per spec: "Attach a shadow root with ... true (for clonable)..."
+				Serializable:   originalShadowRoot.Serializable(),
+			}
+			newShadowRoot, err := copiedElement.AttachShadow(initOptions)
+			if err != nil {
+				// Handle error, e.g., panic or return an error if the function signature allows
+				panic(fmt.Sprintf("Failed to attach shadow root during clone: %v", err))
+			}
+
+			// Set custom element registry and declarative state per spec
+			newShadowRoot.customElementRegistry = originalShadowRoot.CustomElementRegistry()
+			// Note: declarative is a private field, so we can access it directly within the same package
+			newShadowRoot.declarative = originalShadowRoot.declarative
+
+			// Clone children of the original shadow root into the new shadow root
+			shadowChildren := originalShadowRoot.ChildNodes()
+			for i := 0; i < shadowChildren.Length(); i++ {
+				child := shadowChildren.Item(i)
+				childCloneOptions := CloneOptions{
+					Document:         options.Document, // Document for the clone operation
+					Subtree:          true,             // Children of shadow root are always deep cloned as part of this step
+					SelfOnly:         false,
+					Parent:           newShadowRoot, // Parent is the new shadow root
+					FallbackRegistry: nil,           // Per spec: "This intentionally does not pass the fallbackRegistry argument."
+				}
+				cloneNode(child, childCloneOptions)
+			}
+		}
+	}
 
 	return copy
 }
@@ -123,7 +166,9 @@ func cloneSingleNode(node Node, document *Document, fallbackRegistry interface{}
 
 // cloneElement implements element-specific cloning logic
 func cloneElement(elem *Element, document *Document, fallbackRegistry interface{}) Node {
-	// TODO: Handle custom element registry when implemented
+	// TODO: Spec requires using a resolved registry (elem's, or fallbackRegistry if elem's is null)
+	// for element creation. Current NewElement/NewElementNS use document's registry.
+	// FallbackRegistry (if a *CustomElementRegistry) is not currently plumbed through.
 
 	var copy *Element
 	var err error
@@ -166,6 +211,11 @@ func cloneElement(elem *Element, document *Document, fallbackRegistry interface{
 	// The original code had manual copying of these, which might be redundant or conflict
 	// if NewElement/NewElementNS already set them based on their input.
 
+	// Set "is" value per spec
+	if copy != nil && elem.IsValue() != "" {
+		copy.SetIsValue(elem.IsValue())
+	}
+
 	return copy
 }
 
@@ -174,8 +224,22 @@ func cloneDocument(doc *Document) Node {
 	copy := NewDocument()
 
 	// Set copy's encoding, content type, URL, origin, type, mode, and custom element registry to those of node
-	// TODO: Implement these properties when Document is enhanced
-	// For now, we just copy basic properties
+	// Per spec: "Set copy's encoding, content type, URL, origin, type, mode, and custom element registry to those of node."
+	copy.url = doc.URL()
+	copy.documentURI = doc.DocumentURI() // Alias for URL
+	copy.contentType = doc.ContentType()
+	copy.characterSet = doc.CharacterSet()
+	copy.charset = doc.CharacterSet()       // Legacy alias
+	copy.inputEncoding = doc.CharacterSet() // Legacy alias
+	copy.mode = doc.mode                    // Internal field for CompatMode()
+	copy.documentType = doc.documentType    // Internal field for "type" (xml/html)
+
+	// Create a new CustomElementRegistry associated with the cloned document
+	// instead of copying the reference to ensure proper association
+	if doc.CustomElementRegistry() != nil {
+		copy.customElementRegistry = NewCustomElementRegistry(copy)
+	}
+	// TODO: Copy 'origin' when it's available on the Document struct.
 
 	return copy
 }
@@ -190,15 +254,20 @@ func cloneDocumentType(dt *DocumentType, document *Document) Node {
 
 // cloneAttr implements Attr-specific cloning logic
 func cloneAttr(attr *Attr, document *Document) Node {
-	// Set copy's namespace, namespace prefix, local name, and value to those of node
-	copy := NewAttr(attr.name, attr.value, document)
+	// Create the new attribute using its qualified name and value.
+	// NewAttr will parse the qualified name to set initial namespaceURI, prefix, and localName.
+	clonedAttr := NewAttr(attr.Name(), attr.Value(), document)
 
-	// TODO: Copy namespace information when Attr supports namespaces
-	// copy.namespaceURI = attr.namespaceURI
-	// copy.prefix = attr.prefix
-	// copy.localName = attr.localName
+	// Per spec: "Set copy’s namespace, namespace prefix, local name, and value to those of node."
+	// Explicitly copy these properties to ensure exact replication, especially if the original
+	// Attr was created with specific namespace details not fully reconstructible from its name alone.
+	clonedAttr.namespaceURI = attr.NamespaceURI()
+	clonedAttr.prefix = attr.Prefix()
+	clonedAttr.localName = attr.LocalName()
+	// Value is already set by NewAttr, but ensure nodeValue is also consistent.
+	clonedAttr.nodeImpl.nodeValue = attr.Value()
 
-	return copy
+	return clonedAttr
 }
 
 // cloneText implements Text-specific cloning logic
@@ -262,7 +331,9 @@ func runCloningSteps(original Node, copy Node, subtree bool) {
 // This is used internally by the Node implementations
 func CloneNodeSpec(node Node, subtree bool) Node {
 	// If this is a shadow root, throw NotSupportedError
-	// TODO: Implement when shadow DOM is added
+	if _, ok := node.(*ShadowRoot); ok {
+		panic(NewNotSupportedError("ShadowRoot nodes cannot be cloned."))
+	}
 
 	// Return the result of cloning a node given this with subtree set to subtree
 	options := CloneOptions{

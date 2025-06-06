@@ -991,11 +991,8 @@ func (e *Element) AttachShadow(init ShadowRootInit) (*ShadowRoot, error) {
 		return nil, NewNotSupportedError("This element type cannot have a shadow root")
 	}
 
-	// Create the shadow root
-	shadowRoot := NewShadowRoot(e, init.Mode)
-	if init.SlotAssignment != "" {
-		shadowRoot.SetSlotAssignment(init.SlotAssignment)
-	}
+	// Create the shadow root with proper initialization
+	shadowRoot := NewShadowRootWithInit(e, &init)
 
 	// Attach it to this element
 	e.shadowRoot = shadowRoot
