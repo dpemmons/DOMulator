@@ -9,6 +9,7 @@ import (
 
 func TestDOMAPIPhase6ResizeObserver(t *testing.T) {
 	test := domulator.NewTest(t)
+	test.SetDebugMode(true)
 
 	test.LoadHTML(`
 		<!DOCTYPE html>
@@ -69,54 +70,85 @@ func TestDOMAPIPhase6ResizeObserver(t *testing.T) {
 			console.log("observe() error:", e.message);
 		}
 		
-		// Simulate a resize by changing the element's style
-		setTimeout(() => {
-			element.style.width = '200px';
-			element.style.height = '150px';
-			console.log("Element resized");
-			
-			setTimeout(() => {
-				try {
-					observer.unobserve(element);
-					console.log("unobserve() completed");
-				} catch (e) {
-					console.log("unobserve() error:", e.message);
-				}
-				
-				try {
-					observer.disconnect();
-					console.log("disconnect() completed");
-				} catch (e) {
-					console.log("disconnect() error:", e.message);
-				}
-				
-				// Verify observer functionality
-				let results = [];
-				results.push("constructor: " + (typeof ResizeObserver === 'function'));
-				results.push("creation: " + (observer !== null));
-				results.push("methods: " + (typeof observer.observe === 'function'));
-				results.push("callbacks: " + (observerCallbackCount > 0));
-				
-				document.body.setAttribute('data-resize-results', results.join(','));
-				document.body.setAttribute('data-resize-test', 'complete');
-			}, 50);
-		}, 10);
+		// Mark initial setup as complete
+		document.body.setAttribute('data-resize-setup', 'complete');
 		</script>
 	`)
 
-	// Advance virtual time to execute the setTimeout calls and process microtasks
-	test.AdvanceTime(100 * time.Millisecond)
+	// Wait for setup to complete
+	test.AssertElement("body").HasAttribute("data-resize-setup", "complete")
+
+	// Process initial ResizeObserver callback (fired when observe() is called)
 	test.FlushMicrotasks()
-	test.ProcessPendingTimers()
 
-	// Process any additional timers that may have been scheduled
-	test.AdvanceTime(100 * time.Millisecond)
-	test.ProcessPendingTimers()
+	// Check if any callback was fired yet and log state
+	test.ExecuteScript(`
+		var resultsEl = document.getElementById('results');
+		var currentCount = resultsEl ? resultsEl.getAttribute('data-callback-count') : '0';
+		console.log("Initial callback count after FlushMicrotasks:", currentCount);
+		console.log("Observer callback count variable:", observerCallbackCount);
+		document.body.setAttribute('data-initial-count', currentCount || '0');
+	`)
 
+	// Now trigger a resize using the test harness
+	test.TriggerElementResize("#observed-element", domulator.ResizeOptions{
+		Width:  200,
+		Height: 150,
+	})
+
+	// Process the resize callback
+	test.FlushMicrotasks()
+
+	// Check final state and verify ResizeObserver is working
+	test.ExecuteScript(`
+		var resultsEl = document.getElementById('results');
+		var finalCount = resultsEl ? resultsEl.getAttribute('data-callback-count') : '0';
+		console.log("Final callback count:", finalCount);
+		console.log("Observer callback count variable:", observerCallbackCount);
+		console.log("Observed elements:", resultsEl ? resultsEl.getAttribute('data-observed-elements') : 'none');
+		
+		// Verify that ResizeObserver is working - we should have at least 1 callback
+		var isWorking = observerCallbackCount > 0;
+		document.body.setAttribute('data-final-count', finalCount || '0');
+		document.body.setAttribute('data-resize-working', isWorking ? 'true' : 'false');
+	`)
+
+	// Verify that ResizeObserver triggered at least one callback
+	test.AssertElement("body").HasAttribute("data-resize-working", "true")
+
+	// Test observer methods by executing cleanup via JavaScript
+	test.ExecuteScript(`
+		try {
+			observer.unobserve(element);
+			console.log("unobserve() completed");
+		} catch (e) {
+			console.log("unobserve() error:", e.message);
+		}
+		
+		try {
+			observer.disconnect();
+			console.log("disconnect() completed");
+		} catch (e) {
+			console.log("disconnect() error:", e.message);
+		}
+		
+		// Verify observer functionality
+		let results = [];
+		results.push("constructor: " + (typeof ResizeObserver === 'function'));
+		results.push("creation: " + (observer !== null));
+		results.push("methods: " + (typeof observer.observe === 'function'));
+		results.push("callbacks: " + (observerCallbackCount > 0));
+		
+		document.body.setAttribute('data-resize-results', results.join(','));
+		document.body.setAttribute('data-resize-test', 'complete');
+	`)
+
+	// Verify final test results
 	test.AssertElement("body").HasAttribute("data-resize-test", "complete")
 	test.AssertElement("body").HasAttributeContaining("data-resize-results", "constructor: true")
 	test.AssertElement("body").HasAttributeContaining("data-resize-results", "creation: true")
 	test.AssertElement("body").HasAttributeContaining("data-resize-results", "methods: true")
+	test.AssertElement("body").HasAttributeContaining("data-resize-results", "callbacks: true")
 }
 
 func TestDOMAPIPhase6IntersectionObserver(t *testing.T) {

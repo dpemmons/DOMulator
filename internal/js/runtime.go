@@ -10,18 +10,39 @@ import (
 	"github.com/dpemmons/DOMulator/internal/loop"
 )
 
+// Console log levels
+type ConsoleLevel string
+
+const (
+	ConsoleLog   ConsoleLevel = "log"
+	ConsoleError ConsoleLevel = "error"
+	ConsoleWarn  ConsoleLevel = "warn"
+	ConsoleInfo  ConsoleLevel = "info"
+	ConsoleDebug ConsoleLevel = "debug"
+)
+
+// JavaScriptError represents a JavaScript runtime error
+type JavaScriptError struct {
+	Type    string // "TypeError", "ReferenceError", etc.
+	Message string
+	Stack   string
+	Source  interface{} // Original error for advanced use
+}
+
 // Runtime represents a JavaScript runtime environment with DOM integration
 type Runtime struct {
-	vm             *goja.Runtime
-	global         *goja.Object
-	document       *dom.Document
-	window         *goja.Object
-	console        *goja.Object
-	eventLoop      *loop.EventLoop // Event loop for async operations
-	timers         map[int]*Timer  // Legacy timer support (will be replaced)
-	nextTimerID    int
-	storageManager *storage.StorageManager
-	debugMode      bool // Controls console verbosity
+	vm              *goja.Runtime
+	global          *goja.Object
+	document        *dom.Document
+	window          *goja.Object
+	console         *goja.Object
+	eventLoop       *loop.EventLoop // Event loop for async operations
+	timers          map[int]*Timer  // Legacy timer support (will be replaced)
+	nextTimerID     int
+	storageManager  *storage.StorageManager
+	debugMode       bool                                         // Controls console verbosity
+	consoleCallback func(level ConsoleLevel, args []interface{}) // Callback for console output
+	errorCallback   func(err *JavaScriptError)                   // Callback for JavaScript errors
 }
 
 // Timer represents a JavaScript timer (setTimeout/setInterval)
@@ -92,11 +113,37 @@ func (r *Runtime) Document() *dom.Document {
 
 // RunString executes JavaScript code and returns the result
 func (r *Runtime) RunString(code string) (goja.Value, error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			if r.errorCallback != nil {
+				// Convert panic to JavaScriptError and call callback
+				jsErr := r.panicToJavaScriptError(recovered)
+				r.errorCallback(jsErr)
+			} else {
+				// Re-panic if no callback is set (maintains existing behavior)
+				panic(recovered)
+			}
+		}
+	}()
+
 	return r.vm.RunString(code)
 }
 
 // RunScript executes a JavaScript program and returns the result
 func (r *Runtime) RunScript(name, code string) (goja.Value, error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			if r.errorCallback != nil {
+				// Convert panic to JavaScriptError and call callback
+				jsErr := r.panicToJavaScriptError(recovered)
+				r.errorCallback(jsErr)
+			} else {
+				// Re-panic if no callback is set (maintains existing behavior)
+				panic(recovered)
+			}
+		}
+	}()
+
 	program, err := goja.Compile(name, code, false)
 	if err != nil {
 		return nil, fmt.Errorf("compile error: %w", err)
@@ -169,8 +216,12 @@ func (r *Runtime) setupConsole() {
 
 	// console.log
 	r.console.Set("log", func(call goja.FunctionCall) goja.Value {
-		if r.debugMode {
-			args := formatArgs(call.Arguments)
+		args := formatArgs(call.Arguments)
+
+		if r.consoleCallback != nil {
+			r.consoleCallback(ConsoleLog, args)
+		} else if r.debugMode {
+			// Default behavior: only print in debug mode
 			fmt.Println(args...)
 		}
 		// In non-debug mode, suppress console.log entirely to reduce noise
@@ -180,23 +231,39 @@ func (r *Runtime) setupConsole() {
 	// console.error
 	r.console.Set("error", func(call goja.FunctionCall) goja.Value {
 		args := formatArgs(call.Arguments)
-		allArgs := append([]interface{}{"ERROR:"}, args...)
-		fmt.Println(allArgs...)
+
+		if r.consoleCallback != nil {
+			r.consoleCallback(ConsoleError, args)
+		} else {
+			// Default behavior: always print errors
+			allArgs := append([]interface{}{"ERROR:"}, args...)
+			fmt.Println(allArgs...)
+		}
 		return goja.Undefined()
 	})
 
 	// console.warn
 	r.console.Set("warn", func(call goja.FunctionCall) goja.Value {
 		args := formatArgs(call.Arguments)
-		allArgs := append([]interface{}{"WARN:"}, args...)
-		fmt.Println(allArgs...)
+
+		if r.consoleCallback != nil {
+			r.consoleCallback(ConsoleWarn, args)
+		} else {
+			// Default behavior: always print warnings
+			allArgs := append([]interface{}{"WARN:"}, args...)
+			fmt.Println(allArgs...)
+		}
 		return goja.Undefined()
 	})
 
 	// console.info
 	r.console.Set("info", func(call goja.FunctionCall) goja.Value {
-		if r.debugMode {
-			args := formatArgs(call.Arguments)
+		args := formatArgs(call.Arguments)
+
+		if r.consoleCallback != nil {
+			r.consoleCallback(ConsoleInfo, args)
+		} else if r.debugMode {
+			// Default behavior: only print in debug mode
 			allArgs := append([]interface{}{"INFO:"}, args...)
 			fmt.Println(allArgs...)
 		}
@@ -214,6 +281,17 @@ func (r *Runtime) formatConsoleArg(arg goja.Value) interface{} {
 	}
 	if goja.IsNull(arg) {
 		return "null"
+	}
+
+	// Try to determine if it's a primitive type by checking its export type
+	exported := arg.Export()
+	switch exported.(type) {
+	case string:
+		return arg.String()
+	case int, int32, int64, float32, float64:
+		return exported
+	case bool:
+		return arg.ToBoolean()
 	}
 
 	// For objects, provide a cleaner representation
@@ -237,7 +315,7 @@ func (r *Runtime) formatConsoleArg(arg goja.Value) interface{} {
 		return "[object Object]"
 	}
 
-	// For primitives, use string representation
+	// For everything else, use string representation
 	return arg.String()
 }
 
@@ -249,6 +327,65 @@ func (r *Runtime) SetDebugMode(debug bool) {
 // IsDebugMode returns whether debug mode is enabled
 func (r *Runtime) IsDebugMode() bool {
 	return r.debugMode
+}
+
+// SetConsoleCallback sets a callback for console output
+func (r *Runtime) SetConsoleCallback(cb func(level ConsoleLevel, args []interface{})) {
+	r.consoleCallback = cb
+}
+
+// SetErrorCallback sets a callback for JavaScript errors
+func (r *Runtime) SetErrorCallback(cb func(err *JavaScriptError)) {
+	r.errorCallback = cb
+}
+
+// panicToJavaScriptError converts a panic to a JavaScriptError
+func (r *Runtime) panicToJavaScriptError(recovered interface{}) *JavaScriptError {
+	jsErr := &JavaScriptError{
+		Type:    "Error",
+		Message: "Unknown error",
+		Stack:   "",
+		Source:  recovered,
+	}
+
+	// Try to extract details from Goja exceptions
+	switch err := recovered.(type) {
+	case *goja.Exception:
+		jsErr.Message = err.Error()
+		if val := err.Value(); val != nil {
+			if obj := val.ToObject(r.vm); obj != nil {
+				// Extract type
+				if name := obj.Get("name"); name != nil && !goja.IsUndefined(name) {
+					jsErr.Type = name.String()
+				}
+				// Extract message
+				if msg := obj.Get("message"); msg != nil && !goja.IsUndefined(msg) {
+					jsErr.Message = msg.String()
+				}
+				// Extract stack
+				if stack := obj.Get("stack"); stack != nil && !goja.IsUndefined(stack) {
+					jsErr.Stack = stack.String()
+				}
+			}
+		}
+	case error:
+		jsErr.Message = err.Error()
+		// Try to determine error type from message
+		msg := err.Error()
+		if len(msg) > 0 {
+			if msg[:1] == "T" && len(msg) > 9 && msg[:9] == "TypeError" {
+				jsErr.Type = "TypeError"
+			} else if msg[:1] == "R" && len(msg) > 14 && msg[:14] == "ReferenceError" {
+				jsErr.Type = "ReferenceError"
+			} else if msg[:1] == "S" && len(msg) > 11 && msg[:11] == "SyntaxError" {
+				jsErr.Type = "SyntaxError"
+			}
+		}
+	default:
+		jsErr.Message = fmt.Sprintf("%v", recovered)
+	}
+
+	return jsErr
 }
 
 // setupTimers initializes setTimeout and setInterval

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/dpemmons/DOMulator/internal/dom"
@@ -15,10 +16,12 @@ import (
 // with DOMulator. It supports both direct handler integration and
 // server-based testing for maximum flexibility.
 type TestHarness struct {
-	client    *HTTPClient
-	domulator *DOMulator
-	mocks     *NetworkMocks
-	config    *Config
+	client          *HTTPClient
+	domulator       *DOMulator
+	mocks           *NetworkMocks
+	config          *Config
+	consoleCallback func(js.ConsoleLevel, []interface{}) // Stored callback
+	errorCallback   func(*js.JavaScriptError)            // Stored callback
 }
 
 // DOMulator wraps the core DOMulator functionality for testing
@@ -166,6 +169,9 @@ func (h *TestHarness) Navigate(url string) *TestHarness {
 	// Apply debug mode if it was set
 	runtime.SetDebugMode(h.config.DebugMode)
 
+	// Apply stored callbacks
+	h.applyCallbacks()
+
 	// Set initial document readyState to "loading"
 	document.SetReadyState("loading")
 
@@ -218,6 +224,9 @@ func (h *TestHarness) LoadHTML(html string) *TestHarness {
 
 	// Apply debug mode if it was set
 	runtime.SetDebugMode(h.config.DebugMode)
+
+	// Apply stored callbacks
+	h.applyCallbacks()
 
 	// Set initial document readyState to "loading"
 	document.SetReadyState("loading")
@@ -346,6 +355,50 @@ func (h *TestHarness) ResizeWindow(width, height int) *TestHarness {
 	`)
 
 	return h
+}
+
+// SetConsoleCallback sets a callback for console output
+func (h *TestHarness) SetConsoleCallback(cb func(js.ConsoleLevel, []interface{})) *TestHarness {
+	h.consoleCallback = cb
+	if h.domulator != nil && h.domulator.runtime != nil {
+		h.domulator.runtime.SetConsoleCallback(cb)
+	}
+	return h
+}
+
+// SetErrorCallback sets a callback for JavaScript errors
+func (h *TestHarness) SetErrorCallback(cb func(*js.JavaScriptError)) *TestHarness {
+	h.errorCallback = cb
+	if h.domulator != nil && h.domulator.runtime != nil {
+		h.domulator.runtime.SetErrorCallback(cb)
+	}
+	return h
+}
+
+// applyCallbacks applies stored callbacks to the runtime
+func (h *TestHarness) applyCallbacks() {
+	if h.domulator != nil && h.domulator.runtime != nil {
+		if h.consoleCallback != nil {
+			h.domulator.runtime.SetConsoleCallback(h.consoleCallback)
+		}
+		if h.errorCallback != nil {
+			h.domulator.runtime.SetErrorCallback(h.errorCallback)
+		}
+	}
+}
+
+// CaptureConsole creates and sets up a ConsoleCapture helper with a testing.TB
+func (h *TestHarness) CaptureConsole(t testing.TB) *ConsoleCapture {
+	capture := NewConsoleCapture(t)
+	h.SetConsoleCallback(capture.Callback)
+	return capture
+}
+
+// CaptureErrors creates and sets up an ErrorCapture helper with a testing.TB
+func (h *TestHarness) CaptureErrors(t testing.TB) *ErrorCapture {
+	capture := NewErrorCapture(t)
+	h.SetErrorCallback(capture.Callback)
+	return capture
 }
 
 // loadPageResources automatically loads and executes scripts found in the DOM,
