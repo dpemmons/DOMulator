@@ -21,6 +21,7 @@ type Runtime struct {
 	timers         map[int]*Timer  // Legacy timer support (will be replaced)
 	nextTimerID    int
 	storageManager *storage.StorageManager
+	debugMode      bool // Controls console verbosity
 }
 
 // Timer represents a JavaScript timer (setTimeout/setInterval)
@@ -135,22 +136,34 @@ func (r *Runtime) setupGlobals() {
 func (r *Runtime) setupConsole() {
 	r.console = r.vm.NewObject()
 
+	// Helper function to format arguments properly
+	formatArgs := func(args []goja.Value) []interface{} {
+		formatted := make([]interface{}, len(args))
+		for i, arg := range args {
+			if r.debugMode {
+				// In debug mode, export full object details
+				formatted[i] = arg.Export()
+			} else {
+				// In normal mode, use cleaner string representation
+				formatted[i] = r.formatConsoleArg(arg)
+			}
+		}
+		return formatted
+	}
+
 	// console.log
 	r.console.Set("log", func(call goja.FunctionCall) goja.Value {
-		args := make([]interface{}, len(call.Arguments))
-		for i, arg := range call.Arguments {
-			args[i] = arg.Export()
+		if r.debugMode {
+			args := formatArgs(call.Arguments)
+			fmt.Println(args...)
 		}
-		fmt.Println(args...)
+		// In non-debug mode, suppress console.log entirely to reduce noise
 		return goja.Undefined()
 	})
 
 	// console.error
 	r.console.Set("error", func(call goja.FunctionCall) goja.Value {
-		args := make([]interface{}, len(call.Arguments))
-		for i, arg := range call.Arguments {
-			args[i] = arg.Export()
-		}
+		args := formatArgs(call.Arguments)
 		allArgs := append([]interface{}{"ERROR:"}, args...)
 		fmt.Println(allArgs...)
 		return goja.Undefined()
@@ -158,10 +171,7 @@ func (r *Runtime) setupConsole() {
 
 	// console.warn
 	r.console.Set("warn", func(call goja.FunctionCall) goja.Value {
-		args := make([]interface{}, len(call.Arguments))
-		for i, arg := range call.Arguments {
-			args[i] = arg.Export()
-		}
+		args := formatArgs(call.Arguments)
 		allArgs := append([]interface{}{"WARN:"}, args...)
 		fmt.Println(allArgs...)
 		return goja.Undefined()
@@ -169,17 +179,60 @@ func (r *Runtime) setupConsole() {
 
 	// console.info
 	r.console.Set("info", func(call goja.FunctionCall) goja.Value {
-		args := make([]interface{}, len(call.Arguments))
-		for i, arg := range call.Arguments {
-			args[i] = arg.Export()
+		if r.debugMode {
+			args := formatArgs(call.Arguments)
+			allArgs := append([]interface{}{"INFO:"}, args...)
+			fmt.Println(allArgs...)
 		}
-		allArgs := append([]interface{}{"INFO:"}, args...)
-		fmt.Println(allArgs...)
 		return goja.Undefined()
 	})
 
 	r.global.Set("console", r.console)
 	r.window.Set("console", r.console)
+}
+
+// formatConsoleArg formats a JavaScript value for clean console output
+func (r *Runtime) formatConsoleArg(arg goja.Value) interface{} {
+	if arg == nil || goja.IsUndefined(arg) {
+		return "undefined"
+	}
+	if goja.IsNull(arg) {
+		return "null"
+	}
+
+	// For objects, provide a cleaner representation
+	if obj := arg.ToObject(r.vm); obj != nil {
+		// Check if it's a DOM element
+		if domNode := obj.Get("__domNode"); domNode != nil && !goja.IsUndefined(domNode) {
+			if tagName := obj.Get("tagName"); tagName != nil && !goja.IsUndefined(tagName) {
+				return fmt.Sprintf("<%s>", tagName.String())
+			}
+			if nodeName := obj.Get("nodeName"); nodeName != nil && !goja.IsUndefined(nodeName) {
+				return fmt.Sprintf("[%s]", nodeName.String())
+			}
+			return "[DOM Node]"
+		}
+
+		// For plain objects, try to get a reasonable string representation
+		if typeProp := obj.Get("type"); typeProp != nil && !goja.IsUndefined(typeProp) {
+			return fmt.Sprintf("[Event: %s]", typeProp.String())
+		}
+
+		return "[object Object]"
+	}
+
+	// For primitives, use string representation
+	return arg.String()
+}
+
+// SetDebugMode enables or disables verbose console output
+func (r *Runtime) SetDebugMode(debug bool) {
+	r.debugMode = debug
+}
+
+// IsDebugMode returns whether debug mode is enabled
+func (r *Runtime) IsDebugMode() bool {
+	return r.debugMode
 }
 
 // setupTimers initializes setTimeout and setInterval

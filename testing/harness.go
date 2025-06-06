@@ -32,6 +32,7 @@ type Config struct {
 	DefaultTimeout time.Duration
 	BaseURL        string
 	Headers        map[string]string
+	DebugMode      bool // Controls JavaScript console verbosity
 }
 
 // NewTestHarness creates a new test harness instance
@@ -114,6 +115,9 @@ func (h *TestHarness) Navigate(url string) *TestHarness {
 		runtime:  runtime,
 	}
 
+	// Apply debug mode if it was set
+	runtime.SetDebugMode(h.config.DebugMode)
+
 	// Set initial document readyState to "loading"
 	document.SetReadyState("loading")
 
@@ -155,6 +159,9 @@ func (h *TestHarness) LoadHTML(html string) *TestHarness {
 		document: document,
 		runtime:  runtime,
 	}
+
+	// Apply debug mode if it was set
+	runtime.SetDebugMode(h.config.DebugMode)
 
 	// Set initial document readyState to "loading"
 	document.SetReadyState("loading")
@@ -212,6 +219,14 @@ func (h *TestHarness) SetTimeout(timeout time.Duration) *TestHarness {
 func (h *TestHarness) SetHeader(key, value string) *TestHarness {
 	h.config.Headers[key] = value
 	h.client.SetHeader(key, value)
+	return h
+}
+
+// SetDebugMode enables or disables verbose console output from JavaScript
+func (h *TestHarness) SetDebugMode(debug bool) *TestHarness {
+	if h.domulator != nil && h.domulator.runtime != nil {
+		h.domulator.runtime.SetDebugMode(debug)
+	}
 	return h
 }
 

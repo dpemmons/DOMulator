@@ -101,6 +101,15 @@ func (test *Test) SetHeader(key, value string) *Test {
 	return test
 }
 
+// SetDebugMode enables or disables verbose console output from JavaScript.
+// When debug mode is disabled (default), console.log statements are suppressed
+// to reduce noise in test output. When enabled, all console output is shown
+// including detailed object dumps.
+func (test *Test) SetDebugMode(debug bool) *Test {
+	test.harness.SetDebugMode(debug)
+	return test
+}
+
 // Interaction Methods - These methods simulate user interactions with the page
 
 // Click simulates a click event on the first element matching the selector.
