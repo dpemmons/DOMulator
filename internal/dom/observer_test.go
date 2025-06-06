@@ -28,20 +28,11 @@ func TestMutationObserver_BasicFunctionality(t *testing.T) {
 		ChildList: true,
 	})
 
-	// Make a mutation
+	// Make a mutation - this will automatically trigger mutation notification
 	child := doc.CreateElement("span")
 	root.AppendChild(child)
 
-	// Manually trigger mutation notification
-	record := &MutationRecord{
-		Type:         "childList",
-		Target:       root,
-		AddedNodes:   []Node{child},
-		RemovedNodes: []Node{},
-	}
-	doc.getObserverRegistry().NotifyMutation(record)
-
-	// Process mutation observers
+	// Process mutation observers (the mutation was already queued by AppendChild)
 	doc.getObserverRegistry().ProcessMutationObservers()
 
 	// Check that callback was called
