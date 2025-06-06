@@ -548,22 +548,41 @@ func (e *Element) InnerHTML() string {
 
 // SetInnerHTML sets the HTML content of the element.
 func (e *Element) SetInnerHTML(html string) {
-	// TODO: Implement HTML parsing and DOM manipulation
-	// For now, clear existing children and set a text node
+	// Clear existing children
 	e.childNodes = nil
-	textNode := NewText(html, e.ownerDocument)
-	e.AppendChild(textNode)
-	e.innerHTML = &html // Invalidate cached innerHTML
-	e.outerHTML = nil   // Invalidate cached outerHTML
-	e.textContent = nil // Invalidate cached textContent
+
+	// Parse HTML fragment and add as children
+	if strings.TrimSpace(html) != "" {
+		parsedNodes := e.parseHTMLFragment(html)
+		for _, node := range parsedNodes {
+			e.AppendChild(node)
+		}
+	}
+
+	// Invalidate cached properties
+	e.innerHTML = &html
+	e.outerHTML = nil
+	e.textContent = nil
 }
 
 // OuterHTML returns the HTML content of the element including itself.
 func (e *Element) OuterHTML() string {
 	if e.outerHTML == nil {
-		// TODO: Implement actual HTML serialization
-		// For now, a placeholder
-		content := "<" + e.tagName + ">" + e.InnerHTML() + "</" + e.tagName + ">"
+		// Build opening tag with attributes
+		openTag := "<" + e.tagName
+
+		// Add attributes
+		attrs := e.attributes.ToSlice()
+		for _, attr := range attrs {
+			openTag += ` ` + attr.Name() + `="` + attr.Value() + `"`
+		}
+		openTag += ">"
+
+		// Build closing tag
+		closeTag := "</" + e.tagName + ">"
+
+		// Combine with inner content
+		content := openTag + e.InnerHTML() + closeTag
 		e.outerHTML = &content
 	}
 	return *e.outerHTML

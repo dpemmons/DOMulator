@@ -70,9 +70,24 @@ func (h *TestHarness) SetBaseURL(url string) *TestHarness {
 // This method automatically loads and executes any <script> tags found in the HTML,
 // similar to how a real browser would behave.
 func (h *TestHarness) Navigate(url string) *TestHarness {
-	// Resolve relative URLs using base URL if configured
+	// Handle absolute URLs by automatically configuring the client for HTTP mode
 	fullURL := url
-	if h.config.BaseURL != "" && !strings.HasPrefix(url, "http") {
+	if strings.HasPrefix(url, "http") {
+		// For absolute URLs, we need to ensure the client is configured to use HTTP mode
+		// Extract the base URL (scheme + host + port) for future relative requests
+		if h.config.BaseURL == "" && h.client.handler == nil {
+			// Parse the URL to extract the base
+			if idx := strings.Index(url[8:], "/"); idx != -1 { // Skip "http://" or "https://"
+				baseURL := url[:8+idx] // Include scheme + host + port
+				h.SetBaseURL(baseURL)
+			} else {
+				// URL has no path, use it as base URL
+				h.SetBaseURL(url)
+			}
+		}
+		fullURL = url
+	} else if h.config.BaseURL != "" {
+		// Resolve relative URLs using base URL if configured
 		baseURL := strings.TrimSuffix(h.config.BaseURL, "/")
 		fullURL = baseURL + url
 	}
@@ -85,6 +100,11 @@ func (h *TestHarness) Navigate(url string) *TestHarness {
 	// Load HTML and automatically load resources
 	h.LoadHTML(response.Body)
 	h.loadPageResources(fullURL)
+
+	// Fire window.load event after all resources are loaded
+	if h.domulator != nil && h.domulator.document != nil {
+		h.domulator.document.FireWindowLoad()
+	}
 
 	return h
 }
@@ -116,6 +136,9 @@ func (h *TestHarness) LoadHTML(html string) *TestHarness {
 		document: document,
 		runtime:  runtime,
 	}
+
+	// Set initial document readyState to "loading"
+	document.SetReadyState("loading")
 
 	return h
 }
@@ -194,6 +217,13 @@ func (h *TestHarness) loadPageResources(baseURL string) {
 			}
 		}
 	}
+
+	// Fire DOMContentLoaded event after all scripts have been loaded and executed
+	// This is when scripts can attach event listeners to DOM elements
+	h.domulator.document.FireDOMContentLoaded()
+
+	// Set document readyState to "complete"
+	h.domulator.document.SetReadyState("complete")
 }
 
 // loadExternalScript fetches and executes an external JavaScript file

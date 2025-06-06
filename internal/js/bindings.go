@@ -180,6 +180,15 @@ func (db *DOMBindings) WrapDocument() *goja.Object {
 		return goja.Undefined()
 	}), goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
 
+	// ReadyState property
+	doc.DefineAccessorProperty("readyState",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			return db.vm.ToValue(db.document.ReadyState())
+		}),
+		goja.Undefined(),                // No setter - readyState is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
 	// Event methods (inherited from Node)
 	db.addEventMethods(doc, db.document)
 
@@ -830,8 +839,22 @@ func (db *DOMBindings) WrapEvent(event dom.Event) *goja.Object {
 	evt := db.vm.NewObject()
 
 	evt.Set("type", event.Type())
-	evt.Set("target", db.WrapNode(event.Target()))
-	evt.Set("currentTarget", db.WrapNode(event.CurrentTarget()))
+
+	// Ensure target and currentTarget are properly wrapped
+	target := event.Target()
+	if target != nil {
+		evt.Set("target", db.WrapNode(target))
+	} else {
+		evt.Set("target", goja.Null())
+	}
+
+	currentTarget := event.CurrentTarget()
+	if currentTarget != nil {
+		evt.Set("currentTarget", db.WrapNode(currentTarget))
+	} else {
+		evt.Set("currentTarget", goja.Null())
+	}
+
 	evt.Set("bubbles", event.Bubbles())
 	evt.Set("cancelable", event.Cancelable())
 	evt.Set("defaultPrevented", event.DefaultPrevented())

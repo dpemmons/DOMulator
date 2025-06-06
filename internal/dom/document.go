@@ -33,6 +33,7 @@ type Document struct {
 	doctype        *DocumentType      // DocumentType node reference
 	documentType   string             // Document type ("xml" or "html")
 	mode           string             // Document mode ("no-quirks", "quirks", "limited-quirks")
+	readyState     string             // Document loading state: "loading", "interactive", "complete"
 
 	// DocumentOrShadowRoot mixin per WHATWG DOM Section 4.2.5
 	customElementRegistry *CustomElementRegistry // Custom element registry
@@ -60,6 +61,7 @@ func NewDocument() *Document {
 		contentType:    "application/xml",
 		documentType:   "xml",
 		mode:           "no-quirks",
+		readyState:     "loading", // Initial state per specification
 	}
 	doc.ownerDocument = doc // A document is its own owner document
 	doc.nodeImpl.self = doc // Set the self reference
@@ -128,6 +130,48 @@ func (d *Document) Doctype() *DocumentType {
 		}
 	}
 	return nil
+}
+
+// ReadyState returns the document's loading state
+func (d *Document) ReadyState() string {
+	return d.readyState
+}
+
+// SetReadyState sets the document's loading state and fires readystatechange event
+func (d *Document) SetReadyState(state string) {
+	if d.readyState == state {
+		return // No change needed
+	}
+
+	d.readyState = state
+
+	// Fire readystatechange event on document
+	event := NewEvent("readystatechange", false, false) // Does not bubble, not cancelable
+	d.DispatchEvent(event)
+}
+
+// FireDOMContentLoaded fires the DOMContentLoaded event
+// This should be called when the DOM is completely loaded and parsed
+func (d *Document) FireDOMContentLoaded() {
+	// Set readyState to "interactive" if not already "complete"
+	if d.readyState == "loading" {
+		d.SetReadyState("interactive")
+	}
+
+	// Fire DOMContentLoaded event on document
+	event := NewEvent("DOMContentLoaded", true, false) // Bubbles but not cancelable
+	d.DispatchEvent(event)
+}
+
+// FireWindowLoad fires the load event on the window/document
+// This should be called when all resources are loaded
+func (d *Document) FireWindowLoad() {
+	// Set readyState to "complete"
+	d.SetReadyState("complete")
+
+	// Fire load event on document (represents window.load)
+	event := NewEvent("load", false, false) // Does not bubble, not cancelable
+	d.DispatchEvent(event)
 }
 
 // CreateElement creates a new element with the given tag name

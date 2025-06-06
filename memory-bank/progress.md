@@ -155,9 +155,72 @@ This represents a **fully functional browser-like environment** where JavaScript
 
 ## Next Areas for Enhancement
 
-Now that core integration is complete, future work could focus on:
-- Advanced DOM features (mutations observers, ranges)
+### 🎯 **ACTIVE INITIATIVE: Comprehensive Event System Implementation** 📋 **CURRENT**
+
+**Status**: 🔄 **ACTIVE** - June 5, 2025
+
+#### **8-Phase Comprehensive Event Implementation Plan**
+
+**Overview**: Complete implementation of all missing browser events to achieve full web platform compatibility.
+
+##### **Phase 1: Critical Document Lifecycle Events** (1-2 days) - **🔧 ACTIVE**
+- **DOMContentLoaded** - Critical for framework initialization (fixes current test failure)
+- **readystatechange** - Document loading state transitions  
+- **window.load** - All resources loaded event
+- **document.readyState** property - "loading" → "interactive" → "complete"
+
+##### **Phase 2: Input Events** (2-3 days)
+- **Keyboard Events**: keydown, keyup, keypress with KeyboardEvent interface
+- **Enhanced Form Events**: beforeinput, compositionstart/update/end, select, invalid, reset
+- **Clipboard Events**: cut, copy, paste with ClipboardEvent interface
+
+##### **Phase 3: Advanced Mouse/Pointer Events** (2-3 days)
+- **Mouse Event Enhancement**: mousedown, mouseup, mousemove, contextmenu, wheel
+- **Pointer Events**: Modern unified input (pointerdown, pointerup, pointermove, etc.)
+- **Touch Events**: touchstart, touchend, touchmove, touchcancel
+
+##### **Phase 4: Drag & Drop Events** (2 days)
+- **Drag Events**: dragstart, drag, dragenter, dragover, dragleave, drop, dragend
+- **DataTransfer**: Drag and drop data handling
+
+##### **Phase 5: Window & Document Events** (1-2 days)
+- **Window Events**: resize, scroll, orientationchange, online/offline
+- **Navigation Events**: hashchange, popstate, beforeunload, unload, pageshow/pagehide
+- **Focus Events**: focusin/focusout (bubbling versions)
+
+##### **Phase 6: Media & Animation Events** (2-3 days)
+- **Media Events**: play, pause, ended, loadeddata, timeupdate, etc.
+- **Animation Events**: animationstart, animationend, transitionend, etc.
+
+##### **Phase 7: Observer & Mutation Events** (1 day)
+- **Storage Events**: localStorage/sessionStorage change notifications
+- **slotchange**: Shadow DOM slot changes
+- **Intersection/Resize Observer**: Advanced monitoring events
+
+##### **Phase 8: Miscellaneous Events** (1 day)
+- **Error Handling**: error, rejectionhandled, unhandledrejection
+- **Security**: securitypolicyviolation
+- **Visibility**: visibilitychange, fullscreenchange
+
+**Implementation Architecture**:
+- **Event Factory Pattern**: Centralized event creation
+- **Event Interface Hierarchy**: Proper inheritance (Event → UIEvent → MouseEvent, etc.)
+- **JavaScript Bindings**: Constructor functions and property getters for each event type
+- **Testing Strategy**: Unit tests, integration tests, framework compatibility validation
+
+**Success Metrics**:
+- All integration tests passing
+- HTMX compatibility maintained  
+- React/Vue event handling working
+- Web Platform Tests compliance >90%
+
+**Current Priority**: Fix TestNewAPIWithHTTPTestServer by implementing DOMContentLoaded event
+
+### **Future Enhancement Areas** (Post-Event Implementation)
+
+After completing the comprehensive event system:
+- Advanced DOM features (Range API enhancements)
 - CSS engine integration
-- More browser APIs (WebSockets, WebWorkers)
+- More browser APIs (WebSockets, WebWorkers)  
 - Performance optimizations
 - Advanced event loop features

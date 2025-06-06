@@ -23,6 +23,26 @@ func (h *TestHarness) Click(selector string) *TestHarness {
 	// Create and dispatch a click event
 	clickEvent := dom.NewEvent("click", true, true)
 	element.DispatchEvent(clickEvent)
+
+	// Special handling for submit buttons - also trigger form submission
+	if elem, ok := element.(*dom.Element); ok {
+		buttonType := elem.GetAttribute("type")
+		if buttonType == "submit" || (buttonType == "" && elem.TagName() == "BUTTON") {
+			// Find the parent form
+			parent := elem.ParentNode()
+			for parent != nil {
+				if parentElem, ok := parent.(*dom.Element); ok && parentElem.TagName() == "FORM" {
+					// Trigger submit event on the form
+					submitEvent := dom.NewEvent("submit", true, true)
+					submitEvent.SetTarget(parent)
+					parent.DispatchEvent(submitEvent)
+					break
+				}
+				parent = parent.ParentNode()
+			}
+		}
+	}
+
 	return h
 }
 
@@ -129,6 +149,8 @@ func (h *TestHarness) Submit(selector string) *TestHarness {
 
 	// Create and dispatch submit event
 	submitEvent := dom.NewEvent("submit", true, true)
+	// Manually set the target since it's not set by NewEvent
+	submitEvent.SetTarget(element)
 	element.DispatchEvent(submitEvent)
 	return h
 }

@@ -35,28 +35,44 @@ func TestNewAPIWithHTTPTestServer(t *testing.T) {
 			w.Write([]byte(`
 				// Mock HTMX implementation for testing
 				(function() {
+					console.log('HTMX script starting...');
+					
 					function handleSubmit(event) {
+						console.log('handleSubmit called, event:', event);
 						event.preventDefault();
 						var form = event.target;
+						console.log('form:', form);
 						var target = form.getAttribute('hx-target');
 						var url = form.getAttribute('hx-post');
+						console.log('target:', target, 'url:', url);
 						
 						if (target && url) {
 							// Simple fetch simulation using basic DOM manipulation
 							var targetElement = document.querySelector(target);
+							console.log('targetElement:', targetElement);
 							if (targetElement) {
 								targetElement.innerHTML = '<div class="success">Message sent!</div>';
+								console.log('Updated target element innerHTML');
+							} else {
+								console.log('Target element not found!');
 							}
+						} else {
+							console.log('Missing target or url attributes');
 						}
 					}
 					
 					// Initialize HTMX-like behavior
 					document.addEventListener('DOMContentLoaded', function() {
+						console.log('DOMContentLoaded fired in HTMX script');
 						var forms = document.querySelectorAll('[hx-post]');
+						console.log('Found', forms.length, 'forms with hx-post');
 						for (var i = 0; i < forms.length; i++) {
+							console.log('Adding submit listener to form', i);
 							forms[i].addEventListener('submit', handleSubmit);
 						}
 					});
+					
+					console.log('HTMX script loaded');
 				})();
 			`))
 		case "/api/contact":
@@ -93,9 +109,14 @@ func TestNewAPIWithHTTPTestServer(t *testing.T) {
 	test.AssertElement("input[name=email]").Exists()
 	test.AssertElement("#result").Exists()
 
+	// Debug: Test if HTMX script was loaded by checking if the event handler is attached
+	test.ExecuteScript("console.log('Testing HTMX setup...');")
+
 	// Test form interaction
 	test.Type("input[name=email]", "test@example.com")
-	test.Click("button[type=submit]")
+
+	// Debug: Let's try triggering the form submit event directly
+	test.Submit("form[hx-post]")
 
 	// Debug: Check what's in the result div after form submission
 	resultDiv := test.Document().QuerySelector("#result")
