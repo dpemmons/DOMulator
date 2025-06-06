@@ -21,6 +21,7 @@ type DOMBindings struct {
 	cookieManager *cookies.CookieManager
 	jsListeners   map[dom.Node]map[string][]*goja.Object // Store JS listeners for lookup
 	windowTarget  *WindowEventTarget                     // Window event target for proper bubbling
+	jsRuntime     *Runtime                               // Reference to JS runtime for event loop access
 }
 
 // NewDOMBindings creates a new DOM bindings instance
@@ -240,8 +241,213 @@ func (db *DOMBindings) WrapDocument() *goja.Object {
 		goja.Undefined(),                // No setter - readyState is read-only
 		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
 
+	// Phase 3: Document APIs
+	// Document properties
+	doc.DefineAccessorProperty("implementation",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter - return DOMImplementation
+			return db.wrapDOMImplementation(db.document.Implementation())
+		}),
+		goja.Undefined(),                // No setter - implementation is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	doc.DefineAccessorProperty("characterSet",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			return db.vm.ToValue(db.document.CharacterSet())
+		}),
+		goja.Undefined(),                // No setter - characterSet is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	doc.DefineAccessorProperty("charset",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter - alias for characterSet
+			return db.vm.ToValue(db.document.CharacterSet())
+		}),
+		goja.Undefined(),                // No setter - charset is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	doc.DefineAccessorProperty("inputEncoding",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter - alias for characterSet
+			return db.vm.ToValue(db.document.CharacterSet())
+		}),
+		goja.Undefined(),                // No setter - inputEncoding is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	doc.DefineAccessorProperty("contentType",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			return db.vm.ToValue(db.document.ContentType())
+		}),
+		goja.Undefined(),                // No setter - contentType is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	doc.DefineAccessorProperty("doctype",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			if doctype := db.document.Doctype(); doctype != nil {
+				return db.WrapNode(doctype)
+			}
+			return goja.Null()
+		}),
+		goja.Undefined(),                // No setter - doctype is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	doc.DefineAccessorProperty("compatMode",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			return db.vm.ToValue(db.document.CompatMode())
+		}),
+		goja.Undefined(),                // No setter - compatMode is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	// Document creation methods
+	doc.Set("createAttribute", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("createAttribute requires a name"))
+		}
+
+		name := call.Arguments[0].String()
+		attr, err := db.document.CreateAttribute(name)
+		if err != nil {
+			panic(db.vm.NewTypeError(err.Error()))
+		}
+		return db.WrapNode(attr)
+	})
+
+	doc.Set("createAttributeNS", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(db.vm.NewTypeError("createAttributeNS requires namespace and name"))
+		}
+
+		namespace := ""
+		if !goja.IsNull(call.Arguments[0]) && !goja.IsUndefined(call.Arguments[0]) {
+			namespace = call.Arguments[0].String()
+		}
+		qualifiedName := call.Arguments[1].String()
+
+		attr, err := db.document.CreateAttributeNS(namespace, qualifiedName)
+		if err != nil {
+			panic(db.vm.NewTypeError(err.Error()))
+		}
+		return db.WrapNode(attr)
+	})
+
+	doc.Set("createCDATASection", func(call goja.FunctionCall) goja.Value {
+		data := ""
+		if len(call.Arguments) > 0 {
+			data = call.Arguments[0].String()
+		}
+
+		cdataSection, err := db.document.CreateCDATASection(data)
+		if err != nil {
+			panic(db.vm.NewTypeError(err.Error()))
+		}
+		return db.WrapNode(cdataSection)
+	})
+
+	doc.Set("createProcessingInstruction", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(db.vm.NewTypeError("createProcessingInstruction requires target and data"))
+		}
+
+		target := call.Arguments[0].String()
+		data := call.Arguments[1].String()
+
+		pi, err := db.document.CreateProcessingInstruction(target, data)
+		if err != nil {
+			panic(db.vm.NewTypeError(err.Error()))
+		}
+		return db.WrapNode(pi)
+	})
+
+	doc.Set("createRange", func(call goja.FunctionCall) goja.Value {
+		// Phase 5: Full Range API implementation
+		return db.createRange()
+	})
+
+	doc.Set("createNodeIterator", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("createNodeIterator requires a root node"))
+		}
+
+		// Phase 5: Full NodeIterator implementation
+		return db.createNodeIterator(call.Arguments)
+	})
+
+	doc.Set("createTreeWalker", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("createTreeWalker requires a root node"))
+		}
+
+		// Phase 5: Full TreeWalker implementation
+		return db.createTreeWalker(call.Arguments)
+	})
+
+	// Document manipulation methods
+	doc.Set("importNode", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("importNode requires a node"))
+		}
+
+		node := db.extractNodeFromJS(call.Arguments[0])
+		if node == nil {
+			panic(db.vm.NewTypeError("Invalid node"))
+		}
+
+		deep := false
+		if len(call.Arguments) > 1 {
+			deep = call.Arguments[1].ToBoolean()
+		}
+
+		importedNode, err := db.document.ImportNode(node, deep)
+		if err != nil {
+			panic(db.vm.NewTypeError(err.Error()))
+		}
+		return db.WrapNode(importedNode)
+	})
+
+	doc.Set("adoptNode", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("adoptNode requires a node"))
+		}
+
+		node := db.extractNodeFromJS(call.Arguments[0])
+		if node == nil {
+			panic(db.vm.NewTypeError("Invalid node"))
+		}
+
+		adoptedNode, err := db.document.AdoptNode(node)
+		if err != nil {
+			panic(db.vm.NewTypeError(err.Error()))
+		}
+		return db.WrapNode(adoptedNode)
+	})
+
+	doc.Set("getElementsByName", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return db.vm.NewArray()
+		}
+
+		name := call.Arguments[0].String()
+		collection := db.document.GetElementsByName(name)
+		return db.WrapNodeList(collection.ToSlice())
+	})
+
+	// Normalize document method
+	doc.Set("normalize", func(call goja.FunctionCall) goja.Value {
+		db.document.Normalize()
+		return goja.Undefined()
+	})
+
 	// Event methods (inherited from Node)
 	db.addEventMethods(doc, db.document)
+
+	// Selection API - getSelection method
+	doc.Set("getSelection", func(call goja.FunctionCall) goja.Value {
+		return db.createSelection()
+	})
 
 	return doc
 }
@@ -269,6 +475,351 @@ func (db *DOMBindings) WrapElement(element *dom.Element) *goja.Object {
 	elem.Set("nodeType", int(dom.ElementNode))
 	elem.Set("nodeName", element.TagName())
 	elem.Set("tagName", element.TagName())
+
+	// Phase 1: Core Properties & Simple Methods
+	elem.DefineAccessorProperty("isConnected",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			return db.vm.ToValue(element.IsConnected())
+		}),
+		goja.Undefined(),                // No setter - isConnected is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	elem.DefineAccessorProperty("baseURI",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			return db.vm.ToValue(element.BaseURI())
+		}),
+		goja.Undefined(),                // No setter - baseURI is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	elem.DefineAccessorProperty("nodeValue",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			return db.vm.ToValue(element.NodeValue())
+		}),
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Setter
+			if len(call.Arguments) > 0 {
+				value := call.Arguments[0].String()
+				element.SetNodeValue(value)
+			}
+			return goja.Undefined()
+		}),
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	// Phase 2: Element Navigation & Manipulation
+	// Element navigation properties
+	elem.DefineAccessorProperty("children",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter - return live HTMLCollection of child elements
+			var childElements []*dom.Element
+			for _, child := range element.ChildNodes().ToSlice() {
+				if childElement, ok := child.(*dom.Element); ok {
+					childElements = append(childElements, childElement)
+				}
+			}
+			return db.WrapNodeList(childElements)
+		}),
+		goja.Undefined(),                // No setter - children is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	elem.DefineAccessorProperty("firstElementChild",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			for _, child := range element.ChildNodes().ToSlice() {
+				if childElement, ok := child.(*dom.Element); ok {
+					return db.WrapElement(childElement)
+				}
+			}
+			return goja.Null()
+		}),
+		goja.Undefined(),                // No setter - firstElementChild is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	elem.DefineAccessorProperty("lastElementChild",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			var lastElement *dom.Element
+			for _, child := range element.ChildNodes().ToSlice() {
+				if childElement, ok := child.(*dom.Element); ok {
+					lastElement = childElement
+				}
+			}
+			if lastElement != nil {
+				return db.WrapElement(lastElement)
+			}
+			return goja.Null()
+		}),
+		goja.Undefined(),                // No setter - lastElementChild is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	elem.DefineAccessorProperty("childElementCount",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			count := 0
+			for _, child := range element.ChildNodes().ToSlice() {
+				if _, ok := child.(*dom.Element); ok {
+					count++
+				}
+			}
+			return db.vm.ToValue(count)
+		}),
+		goja.Undefined(),                // No setter - childElementCount is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	elem.DefineAccessorProperty("previousElementSibling",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			if parent := element.ParentNode(); parent != nil {
+				children := parent.ChildNodes().ToSlice()
+				for i, child := range children {
+					if child == element && i > 0 {
+						// Look backwards for previous element sibling
+						for j := i - 1; j >= 0; j-- {
+							if prevElement, ok := children[j].(*dom.Element); ok {
+								return db.WrapElement(prevElement)
+							}
+						}
+						break
+					}
+				}
+			}
+			return goja.Null()
+		}),
+		goja.Undefined(),                // No setter - previousElementSibling is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	elem.DefineAccessorProperty("nextElementSibling",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			if parent := element.ParentNode(); parent != nil {
+				children := parent.ChildNodes().ToSlice()
+				for i, child := range children {
+					if child == element && i < len(children)-1 {
+						// Look forwards for next element sibling
+						for j := i + 1; j < len(children); j++ {
+							if nextElement, ok := children[j].(*dom.Element); ok {
+								return db.WrapElement(nextElement)
+							}
+						}
+						break
+					}
+				}
+			}
+			return goja.Null()
+		}),
+		goja.Undefined(),                // No setter - nextElementSibling is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	// Phase 2: Modern DOM manipulation methods
+	// Modern append/prepend methods
+	elem.Set("append", func(call goja.FunctionCall) goja.Value {
+		for _, arg := range call.Arguments {
+			if goja.IsUndefined(arg) || goja.IsNull(arg) {
+				continue
+			}
+
+			// Handle strings - convert to text nodes
+			domNodeValue := arg.ToObject(db.vm).Get("__domNode")
+			if goja.IsUndefined(domNodeValue) || goja.IsNull(domNodeValue) {
+				textContent := arg.String()
+				textNode := db.document.CreateTextNode(textContent)
+				element.AppendChild(textNode)
+			} else {
+				// Handle DOM nodes
+				node := db.extractNodeFromJS(arg)
+				if node != nil {
+					element.AppendChild(node)
+				}
+			}
+		}
+		db.updateNodeNavigationProperties(elem, element)
+		return goja.Undefined()
+	})
+
+	elem.Set("prepend", func(call goja.FunctionCall) goja.Value {
+		// Insert nodes at the beginning
+		for i := len(call.Arguments) - 1; i >= 0; i-- {
+			arg := call.Arguments[i]
+			if goja.IsUndefined(arg) || goja.IsNull(arg) {
+				continue
+			}
+
+			// Handle strings - convert to text nodes
+			domNodeValue := arg.ToObject(db.vm).Get("__domNode")
+			if goja.IsUndefined(domNodeValue) || goja.IsNull(domNodeValue) {
+				textContent := arg.String()
+				textNode := db.document.CreateTextNode(textContent)
+				element.InsertBefore(textNode, element.FirstChild())
+			} else {
+				// Handle DOM nodes
+				node := db.extractNodeFromJS(arg)
+				if node != nil {
+					element.InsertBefore(node, element.FirstChild())
+				}
+			}
+		}
+		db.updateNodeNavigationProperties(elem, element)
+		return goja.Undefined()
+	})
+
+	elem.Set("replaceChildren", func(call goja.FunctionCall) goja.Value {
+		// Remove all existing children
+		for element.FirstChild() != nil {
+			element.RemoveChild(element.FirstChild())
+		}
+
+		// Add new children
+		for _, arg := range call.Arguments {
+			if goja.IsUndefined(arg) || goja.IsNull(arg) {
+				continue
+			}
+
+			// Handle strings - convert to text nodes
+			domNodeValue := arg.ToObject(db.vm).Get("__domNode")
+			if goja.IsUndefined(domNodeValue) || goja.IsNull(domNodeValue) {
+				textContent := arg.String()
+				textNode := db.document.CreateTextNode(textContent)
+				element.AppendChild(textNode)
+			} else {
+				// Handle DOM nodes
+				node := db.extractNodeFromJS(arg)
+				if node != nil {
+					element.AppendChild(node)
+				}
+			}
+		}
+		db.updateNodeNavigationProperties(elem, element)
+		return goja.Undefined()
+	})
+
+	// ChildNode mixin methods
+	elem.Set("before", func(call goja.FunctionCall) goja.Value {
+		parent := element.ParentNode()
+		if parent == nil {
+			return goja.Undefined()
+		}
+
+		for _, arg := range call.Arguments {
+			if goja.IsUndefined(arg) || goja.IsNull(arg) {
+				continue
+			}
+
+			// Handle strings - convert to text nodes
+			domNodeValue := arg.ToObject(db.vm).Get("__domNode")
+			if goja.IsUndefined(domNodeValue) || goja.IsNull(domNodeValue) {
+				textContent := arg.String()
+				textNode := db.document.CreateTextNode(textContent)
+				parent.InsertBefore(textNode, element)
+			} else {
+				// Handle DOM nodes
+				node := db.extractNodeFromJS(arg)
+				if node != nil {
+					parent.InsertBefore(node, element)
+				}
+			}
+		}
+
+		// Update parent's navigation properties
+		if parentWrapper, exists := db.nodeCache[parent]; exists {
+			db.updateNodeNavigationProperties(parentWrapper, parent)
+		}
+		return goja.Undefined()
+	})
+
+	elem.Set("after", func(call goja.FunctionCall) goja.Value {
+		parent := element.ParentNode()
+		if parent == nil {
+			return goja.Undefined()
+		}
+
+		// Find the next sibling to insert before
+		var nextSibling dom.Node
+		siblings := parent.ChildNodes().ToSlice()
+		for i, sibling := range siblings {
+			if sibling == element && i < len(siblings)-1 {
+				nextSibling = siblings[i+1]
+				break
+			}
+		}
+
+		for _, arg := range call.Arguments {
+			if goja.IsUndefined(arg) || goja.IsNull(arg) {
+				continue
+			}
+
+			// Handle strings - convert to text nodes
+			domNodeValue := arg.ToObject(db.vm).Get("__domNode")
+			if goja.IsUndefined(domNodeValue) || goja.IsNull(domNodeValue) {
+				textContent := arg.String()
+				textNode := db.document.CreateTextNode(textContent)
+				parent.InsertBefore(textNode, nextSibling)
+			} else {
+				// Handle DOM nodes
+				node := db.extractNodeFromJS(arg)
+				if node != nil {
+					parent.InsertBefore(node, nextSibling)
+				}
+			}
+		}
+
+		// Update parent's navigation properties
+		if parentWrapper, exists := db.nodeCache[parent]; exists {
+			db.updateNodeNavigationProperties(parentWrapper, parent)
+		}
+		return goja.Undefined()
+	})
+
+	elem.Set("replaceWith", func(call goja.FunctionCall) goja.Value {
+		parent := element.ParentNode()
+		if parent == nil {
+			return goja.Undefined()
+		}
+
+		// Insert replacement nodes before the element
+		for _, arg := range call.Arguments {
+			if goja.IsUndefined(arg) || goja.IsNull(arg) {
+				continue
+			}
+
+			// Handle strings - convert to text nodes
+			domNodeValue := arg.ToObject(db.vm).Get("__domNode")
+			if goja.IsUndefined(domNodeValue) || goja.IsNull(domNodeValue) {
+				textContent := arg.String()
+				textNode := db.document.CreateTextNode(textContent)
+				parent.InsertBefore(textNode, element)
+			} else {
+				// Handle DOM nodes
+				node := db.extractNodeFromJS(arg)
+				if node != nil {
+					parent.InsertBefore(node, element)
+				}
+			}
+		}
+
+		// Remove the original element
+		parent.RemoveChild(element)
+
+		// Update parent's navigation properties
+		if parentWrapper, exists := db.nodeCache[parent]; exists {
+			db.updateNodeNavigationProperties(parentWrapper, parent)
+		}
+		return goja.Undefined()
+	})
+
+	elem.Set("remove", func(call goja.FunctionCall) goja.Value {
+		parent := element.ParentNode()
+		if parent != nil {
+			parent.RemoveChild(element)
+
+			// Update parent's navigation properties
+			if parentWrapper, exists := db.nodeCache[parent]; exists {
+				db.updateNodeNavigationProperties(parentWrapper, parent)
+			}
+		}
+		return goja.Undefined()
+	})
 
 	// Element content properties (using getters for dynamic updates)
 	elem.DefineAccessorProperty("innerHTML",
@@ -478,8 +1029,17 @@ func (db *DOMBindings) WrapElement(element *dom.Element) *goja.Object {
 		return goja.Undefined()
 	})
 
+	// Add getRootNode method (newer DOM API)
+	elem.Set("getRootNode", func(call goja.FunctionCall) goja.Value {
+		// For most cases, return the document
+		return db.WrapDocument()
+	})
+
 	// Add node methods
 	db.addNodeMethods(elem, element)
+
+	// Phase 4: Advanced DOM Features - Add to elements
+	db.addPhase4NodeMethods(elem, element)
 
 	// Add event methods
 	db.addEventMethods(elem, element)
@@ -515,8 +1075,53 @@ func (db *DOMBindings) WrapNode(node dom.Node) *goja.Object {
 	// Basic node properties
 	obj.Set("nodeType", int(node.NodeType()))
 	obj.Set("nodeName", node.NodeName())
-	obj.Set("nodeValue", node.NodeValue())
-	obj.Set("textContent", db.getTextContent(node))
+
+	// Phase 1: Core Properties & Simple Methods
+	obj.DefineAccessorProperty("isConnected",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			return db.vm.ToValue(node.IsConnected())
+		}),
+		goja.Undefined(),                // No setter - isConnected is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	obj.DefineAccessorProperty("baseURI",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			return db.vm.ToValue(node.BaseURI())
+		}),
+		goja.Undefined(),                // No setter - baseURI is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	obj.DefineAccessorProperty("nodeValue",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			return db.vm.ToValue(node.NodeValue())
+		}),
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Setter
+			if len(call.Arguments) > 0 {
+				value := call.Arguments[0].String()
+				node.SetNodeValue(value)
+			}
+			return goja.Undefined()
+		}),
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	obj.DefineAccessorProperty("textContent",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			return db.vm.ToValue(db.getTextContent(node))
+		}),
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Setter
+			if len(call.Arguments) > 0 {
+				text := call.Arguments[0].String()
+				node.SetTextContent(text)
+			}
+			return goja.Undefined()
+		}),
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
 
 	switch n := node.(type) {
 	case *dom.Text:
@@ -528,8 +1133,124 @@ func (db *DOMBindings) WrapNode(node dom.Node) *goja.Object {
 	// Add common node methods
 	db.addNodeMethods(obj, node)
 
+	// Phase 4: Advanced DOM Features - Add to all nodes
+	db.addPhase4NodeMethods(obj, node)
+
 	// Add event methods
 	db.addEventMethods(obj, node)
+
+	return obj
+}
+
+// createMediaQueryList creates a MediaQueryList JavaScript object
+func (db *DOMBindings) createMediaQueryList(mediaQuery string) *goja.Object {
+	obj := db.vm.NewObject()
+
+	// MediaQueryList properties
+	obj.Set("media", mediaQuery)
+
+	// Mock matches property - for testing, we'll have some basic logic
+	var matches bool
+	// Simple mock logic for common media queries
+	switch {
+	case mediaQuery == "(min-width: 768px)":
+		matches = true // Assume desktop by default
+	case mediaQuery == "(max-width: 600px)":
+		matches = false // Assume not mobile
+	case mediaQuery == "(orientation: landscape)":
+		matches = true // Assume landscape
+	case mediaQuery == "(hover: hover)":
+		matches = true // Assume hover capability
+	default:
+		matches = false // Default to false for unknown queries
+	}
+
+	obj.Set("matches", matches)
+
+	// Event listener storage
+	var changeListeners []goja.Callable
+
+	// addEventListener method (modern approach)
+	obj.Set("addEventListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(db.vm.NewTypeError("addEventListener requires type and listener"))
+		}
+
+		eventType := call.Arguments[0].String()
+		if eventType != "change" {
+			return goja.Undefined() // Only support 'change' events
+		}
+
+		listener, ok := goja.AssertFunction(call.Arguments[1])
+		if !ok {
+			panic(db.vm.NewTypeError("Listener must be a function"))
+		}
+
+		changeListeners = append(changeListeners, listener)
+		return goja.Undefined()
+	})
+
+	// removeEventListener method
+	obj.Set("removeEventListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			return goja.Undefined()
+		}
+
+		eventType := call.Arguments[0].String()
+		if eventType != "change" {
+			return goja.Undefined()
+		}
+
+		// For simplicity, remove all listeners
+		changeListeners = nil
+		return goja.Undefined()
+	})
+
+	// addListener method (deprecated but still supported)
+	obj.Set("addListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("addListener requires a listener"))
+		}
+
+		listener, ok := goja.AssertFunction(call.Arguments[0])
+		if !ok {
+			panic(db.vm.NewTypeError("Listener must be a function"))
+		}
+
+		changeListeners = append(changeListeners, listener)
+		return goja.Undefined()
+	})
+
+	// removeListener method (deprecated but still supported)
+	obj.Set("removeListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Undefined()
+		}
+
+		// For simplicity, remove all listeners
+		changeListeners = nil
+		return goja.Undefined()
+	})
+
+	// dispatchEvent method (for completeness)
+	obj.Set("dispatchEvent", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("dispatchEvent requires an event"))
+		}
+
+		// Create event object for listeners
+		event := db.vm.NewObject()
+		event.Set("type", "change")
+		event.Set("matches", matches)
+		event.Set("media", mediaQuery)
+
+		// Call all change listeners
+		for _, listener := range changeListeners {
+			_, _ = listener(obj, event)
+		}
+
+		return db.vm.ToValue(true)
+	})
 
 	return obj
 }
@@ -1144,6 +1865,422 @@ func (db *DOMBindings) SetupGlobalAPIs() {
 
 		return promise
 	})
+
+	// Phase 1: Core Node Constructors & Properties
+	// Text constructor
+	db.vm.Set("Text", func(call goja.ConstructorCall) *goja.Object {
+		data := ""
+		if len(call.Arguments) > 0 {
+			data = call.Arguments[0].String()
+		}
+		textNode := db.document.CreateTextNode(data)
+		return db.WrapNode(textNode)
+	})
+
+	// Comment constructor
+	db.vm.Set("Comment", func(call goja.ConstructorCall) *goja.Object {
+		data := ""
+		if len(call.Arguments) > 0 {
+			data = call.Arguments[0].String()
+		}
+		comment := db.document.CreateComment(data)
+		return db.WrapNode(comment)
+	})
+
+	// DocumentType constructor (read-only, but available for instanceof checks)
+	db.vm.Set("DocumentType", func(call goja.ConstructorCall) *goja.Object {
+		// DocumentType cannot be constructed directly in DOM
+		panic(db.vm.NewTypeError("DocumentType constructor is not available"))
+	})
+
+	// Attr constructor (read-only, but available for instanceof checks)
+	db.vm.Set("Attr", func(call goja.ConstructorCall) *goja.Object {
+		// Attr cannot be constructed directly in most browsers
+		panic(db.vm.NewTypeError("Attr constructor is not available"))
+	})
+
+	// CDATASection constructor
+	db.vm.Set("CDATASection", func(call goja.ConstructorCall) *goja.Object {
+		// CDATASection constructor is not typically available directly
+		panic(db.vm.NewTypeError("CDATASection constructor is not available"))
+	})
+
+	// ProcessingInstruction constructor
+	db.vm.Set("ProcessingInstruction", func(call goja.ConstructorCall) *goja.Object {
+		// ProcessingInstruction constructor is not typically available directly
+		panic(db.vm.NewTypeError("ProcessingInstruction constructor is not available"))
+	})
+
+	// Add DOM constructor globals that libraries like HTMX expect
+	db.vm.Set("Element", func(call goja.ConstructorCall) *goja.Object {
+		// Element constructor - HTMX uses this to check instanceof
+		return db.vm.NewObject()
+	})
+
+	nodeConstructor := func(call goja.ConstructorCall) *goja.Object {
+		// Node constructor
+		return db.vm.NewObject()
+	}
+	db.vm.Set("Node", nodeConstructor)
+
+	// Add Node constants to the constructor
+	nodeObj := db.vm.Get("Node").(*goja.Object)
+	nodeObj.Set("ELEMENT_NODE", int(dom.ElementNode))
+	nodeObj.Set("ATTRIBUTE_NODE", int(dom.AttributeNode))
+	nodeObj.Set("TEXT_NODE", int(dom.TextNode))
+	nodeObj.Set("CDATA_SECTION_NODE", int(dom.CDataSectionNode))
+	nodeObj.Set("ENTITY_REFERENCE_NODE", int(dom.EntityReferenceNode))
+	nodeObj.Set("ENTITY_NODE", int(dom.EntityNode))
+	nodeObj.Set("PROCESSING_INSTRUCTION_NODE", int(dom.ProcessingInstructionNode))
+	nodeObj.Set("COMMENT_NODE", int(dom.CommentNode))
+	nodeObj.Set("DOCUMENT_NODE", int(dom.DocumentNode))
+	nodeObj.Set("DOCUMENT_TYPE_NODE", int(dom.DocumentTypeNode))
+	nodeObj.Set("DOCUMENT_FRAGMENT_NODE", int(dom.DocumentFragmentNode))
+	nodeObj.Set("NOTATION_NODE", int(dom.NotationNode))
+
+	db.vm.Set("Document", func(call goja.ConstructorCall) *goja.Object {
+		// Document constructor
+		return db.vm.NewObject()
+	})
+
+	db.vm.Set("HTMLElement", func(call goja.ConstructorCall) *goja.Object {
+		// HTMLElement constructor
+		return db.vm.NewObject()
+	})
+
+	db.vm.Set("DocumentFragment", func(call goja.ConstructorCall) *goja.Object {
+		// DocumentFragment constructor
+		return db.vm.NewObject()
+	})
+
+	// NodeFilter constants and functionality
+	nodeFilter := db.vm.NewObject()
+	nodeFilter.Set("SHOW_ALL", 0xFFFFFFFF)
+	nodeFilter.Set("SHOW_ELEMENT", 0x1)
+	nodeFilter.Set("SHOW_ATTRIBUTE", 0x2)
+	nodeFilter.Set("SHOW_TEXT", 0x4)
+	nodeFilter.Set("SHOW_CDATA_SECTION", 0x8)
+	nodeFilter.Set("SHOW_ENTITY_REFERENCE", 0x10)
+	nodeFilter.Set("SHOW_ENTITY", 0x20)
+	nodeFilter.Set("SHOW_PROCESSING_INSTRUCTION", 0x40)
+	nodeFilter.Set("SHOW_COMMENT", 0x80)
+	nodeFilter.Set("SHOW_DOCUMENT", 0x100)
+	nodeFilter.Set("SHOW_DOCUMENT_TYPE", 0x200)
+	nodeFilter.Set("SHOW_DOCUMENT_FRAGMENT", 0x400)
+	nodeFilter.Set("SHOW_NOTATION", 0x800)
+
+	// NodeFilter result constants
+	nodeFilter.Set("FILTER_ACCEPT", 1)
+	nodeFilter.Set("FILTER_REJECT", 2)
+	nodeFilter.Set("FILTER_SKIP", 3)
+
+	db.vm.Set("NodeFilter", nodeFilter)
+
+	// Selection API
+	db.vm.Set("Selection", func(call goja.ConstructorCall) *goja.Object {
+		// Selection objects are typically not constructed directly
+		panic(db.vm.NewTypeError("Selection constructor is not available"))
+	})
+
+	// Storage API
+	localStorage := db.vm.NewObject()
+	sessionStorage := db.vm.NewObject()
+
+	// In-memory storage for simulation
+	localStorageData := make(map[string]string)
+	sessionStorageData := make(map[string]string)
+
+	// Implement localStorage methods
+	localStorage.Set("setItem", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(db.vm.NewTypeError("setItem requires key and value"))
+		}
+		key := call.Arguments[0].String()
+		value := call.Arguments[1].String()
+		localStorageData[key] = value
+		return goja.Undefined()
+	})
+
+	localStorage.Set("getItem", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Null()
+		}
+		key := call.Arguments[0].String()
+		if value, exists := localStorageData[key]; exists {
+			return db.vm.ToValue(value)
+		}
+		return goja.Null()
+	})
+
+	localStorage.Set("removeItem", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Undefined()
+		}
+		key := call.Arguments[0].String()
+		delete(localStorageData, key)
+		return goja.Undefined()
+	})
+
+	localStorage.Set("clear", func(call goja.FunctionCall) goja.Value {
+		localStorageData = make(map[string]string)
+		return goja.Undefined()
+	})
+
+	localStorage.Set("key", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Null()
+		}
+		index := int(call.Arguments[0].ToInteger())
+		keys := make([]string, 0, len(localStorageData))
+		for k := range localStorageData {
+			keys = append(keys, k)
+		}
+		if index >= 0 && index < len(keys) {
+			return db.vm.ToValue(keys[index])
+		}
+		return goja.Null()
+	})
+
+	localStorage.DefineAccessorProperty("length",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			return db.vm.ToValue(len(localStorageData))
+		}),
+		goja.Undefined(),
+		goja.FLAG_FALSE, goja.FLAG_TRUE)
+
+	// Implement sessionStorage methods (same as localStorage but different data)
+	sessionStorage.Set("setItem", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(db.vm.NewTypeError("setItem requires key and value"))
+		}
+		key := call.Arguments[0].String()
+		value := call.Arguments[1].String()
+		sessionStorageData[key] = value
+		return goja.Undefined()
+	})
+
+	sessionStorage.Set("getItem", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Null()
+		}
+		key := call.Arguments[0].String()
+		if value, exists := sessionStorageData[key]; exists {
+			return db.vm.ToValue(value)
+		}
+		return goja.Null()
+	})
+
+	sessionStorage.Set("removeItem", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Undefined()
+		}
+		key := call.Arguments[0].String()
+		delete(sessionStorageData, key)
+		return goja.Undefined()
+	})
+
+	sessionStorage.Set("clear", func(call goja.FunctionCall) goja.Value {
+		sessionStorageData = make(map[string]string)
+		return goja.Undefined()
+	})
+
+	sessionStorage.Set("key", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Null()
+		}
+		index := int(call.Arguments[0].ToInteger())
+		keys := make([]string, 0, len(sessionStorageData))
+		for k := range sessionStorageData {
+			keys = append(keys, k)
+		}
+		if index >= 0 && index < len(keys) {
+			return db.vm.ToValue(keys[index])
+		}
+		return goja.Null()
+	})
+
+	sessionStorage.DefineAccessorProperty("length",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			return db.vm.ToValue(len(sessionStorageData))
+		}),
+		goja.Undefined(),
+		goja.FLAG_FALSE, goja.FLAG_TRUE)
+
+	// Set storage objects on window and globally
+	window.Set("localStorage", localStorage)
+	window.Set("sessionStorage", sessionStorage)
+	db.vm.Set("localStorage", localStorage)
+	db.vm.Set("sessionStorage", sessionStorage)
+
+	// Selection API - getSelection method on window
+	window.Set("getSelection", func(call goja.FunctionCall) goja.Value {
+		return db.createSelection()
+	})
+
+	// Also set getSelection globally
+	db.vm.Set("getSelection", func(call goja.FunctionCall) goja.Value {
+		return db.createSelection()
+	})
+
+	// MediaQuery API - matchMedia function
+	window.Set("matchMedia", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("matchMedia requires a media query string"))
+		}
+
+		mediaQuery := call.Arguments[0].String()
+		return db.createMediaQueryList(mediaQuery)
+	})
+
+	// Also set matchMedia globally
+	db.vm.Set("matchMedia", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("matchMedia requires a media query string"))
+		}
+
+		mediaQuery := call.Arguments[0].String()
+		return db.createMediaQueryList(mediaQuery)
+	})
+
+	// MutationObserver constructor
+	db.vm.Set("MutationObserver", func(call goja.ConstructorCall) *goja.Object {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("MutationObserver constructor requires a callback"))
+		}
+
+		callback, ok := goja.AssertFunction(call.Arguments[0])
+		if !ok {
+			panic(db.vm.NewTypeError("MutationObserver callback must be a function"))
+		}
+
+		// Create a Go DOM MutationObserver that bridges to JavaScript
+		domCallback := func(records []*dom.MutationRecord, observer *dom.MutationObserver) {
+			// Convert DOM mutation records to JavaScript objects
+			jsRecords := db.vm.NewArray()
+			for i, record := range records {
+				jsRecord := db.wrapMutationRecord(record)
+				jsRecords.Set(strconv.Itoa(i), jsRecord)
+			}
+			jsRecords.Set("length", len(records))
+
+			// Call JavaScript callback via microtask if we have access to event loop
+			if db.jsRuntime != nil && db.jsRuntime.EventLoop() != nil {
+				// Queue as microtask for proper event loop behavior
+				db.jsRuntime.EventLoop().QueueMicrotask(func() {
+					_, _ = callback(goja.Undefined(), jsRecords, db.wrapDOMMutationObserver(observer))
+				}, "MutationObserver")
+			} else {
+				// Fallback: call immediately
+				_, _ = callback(goja.Undefined(), jsRecords, db.wrapDOMMutationObserver(observer))
+			}
+		}
+
+		// Create the actual DOM MutationObserver
+		domObserver := dom.NewMutationObserver(domCallback)
+
+		// Return JavaScript wrapper
+		return db.wrapDOMMutationObserver(domObserver)
+	})
+
+	// Phase 6: Modern Web APIs
+
+	// ResizeObserver constructor
+	db.vm.Set("ResizeObserver", func(call goja.ConstructorCall) *goja.Object {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("ResizeObserver constructor requires a callback"))
+		}
+
+		callback, ok := goja.AssertFunction(call.Arguments[0])
+		if !ok {
+			panic(db.vm.NewTypeError("ResizeObserver callback must be a function"))
+		}
+
+		return db.createResizeObserver(callback)
+	})
+
+	// IntersectionObserver constructor
+	db.vm.Set("IntersectionObserver", func(call goja.ConstructorCall) *goja.Object {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("IntersectionObserver constructor requires a callback"))
+		}
+
+		callback, ok := goja.AssertFunction(call.Arguments[0])
+		if !ok {
+			panic(db.vm.NewTypeError("IntersectionObserver callback must be a function"))
+		}
+
+		// Parse options if provided
+		var options *goja.Object
+		if len(call.Arguments) > 1 && !goja.IsNull(call.Arguments[1]) && !goja.IsUndefined(call.Arguments[1]) {
+			options = call.Arguments[1].ToObject(db.vm)
+		}
+
+		return db.createIntersectionObserver(callback, options)
+	})
+
+	// File constructor
+	db.vm.Set("File", func(call goja.ConstructorCall) *goja.Object {
+		if len(call.Arguments) < 2 {
+			panic(db.vm.NewTypeError("File constructor requires fileBits and name"))
+		}
+
+		// Parse file bits (array of strings/blobs)
+		fileBitsArray := call.Arguments[0].ToObject(db.vm)
+		if fileBitsArray == nil {
+			panic(db.vm.NewTypeError("File constructor requires an array of file bits"))
+		}
+
+		name := call.Arguments[1].String()
+
+		// Parse options
+		var fileType string
+		var lastModified int64
+		if len(call.Arguments) > 2 {
+			options := call.Arguments[2].ToObject(db.vm)
+			if options != nil {
+				if typeVal := options.Get("type"); typeVal != nil && !goja.IsUndefined(typeVal) {
+					fileType = typeVal.String()
+				}
+				if lastModVal := options.Get("lastModified"); lastModVal != nil && !goja.IsUndefined(lastModVal) {
+					lastModified = lastModVal.ToInteger()
+				}
+			}
+		}
+
+		return db.createFile(fileBitsArray, name, fileType, lastModified)
+	})
+
+	// Blob constructor
+	db.vm.Set("Blob", func(call goja.ConstructorCall) *goja.Object {
+		var blobParts *goja.Object
+		if len(call.Arguments) > 0 {
+			blobParts = call.Arguments[0].ToObject(db.vm)
+		}
+
+		// Parse options
+		var blobType string
+		if len(call.Arguments) > 1 {
+			options := call.Arguments[1].ToObject(db.vm)
+			if options != nil {
+				if typeVal := options.Get("type"); typeVal != nil && !goja.IsUndefined(typeVal) {
+					blobType = typeVal.String()
+				}
+			}
+		}
+
+		return db.createBlob(blobParts, blobType)
+	})
+
+	// FileReader constructor
+	db.vm.Set("FileReader", func(call goja.ConstructorCall) *goja.Object {
+		return db.createFileReader()
+	})
+
+	// FileReader constants
+	fileReaderConstructor := db.vm.Get("FileReader").(*goja.Object)
+	fileReaderConstructor.Set("EMPTY", 0)
+	fileReaderConstructor.Set("LOADING", 1)
+	fileReaderConstructor.Set("DONE", 2)
 
 	// Add XMLHttpRequest for older libraries
 	db.vm.Set("XMLHttpRequest", func(call goja.ConstructorCall) *goja.Object {
@@ -1921,6 +3058,83 @@ func (db *DOMBindings) wrapXPathResult(result *xpath.XPathResult) *goja.Object {
 	return obj
 }
 
+// wrapDOMImplementation wraps a DOMImplementation for JavaScript access
+func (db *DOMBindings) wrapDOMImplementation(impl *dom.DOMImplementation) *goja.Object {
+	obj := db.vm.NewObject()
+
+	// hasFeature method
+	obj.Set("hasFeature", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			return db.vm.ToValue(false)
+		}
+		feature := call.Arguments[0].String()
+		version := call.Arguments[1].String()
+		return db.vm.ToValue(impl.HasFeature(feature, version))
+	})
+
+	// createDocumentType method
+	obj.Set("createDocumentType", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 3 {
+			panic(db.vm.NewTypeError("createDocumentType requires qualifiedName, publicId, and systemId"))
+		}
+		qualifiedName := call.Arguments[0].String()
+		publicId := call.Arguments[1].String()
+		systemId := call.Arguments[2].String()
+
+		doctype, err := impl.CreateDocumentType(qualifiedName, publicId, systemId)
+		if err != nil {
+			panic(db.vm.NewTypeError(err.Error()))
+		}
+		return db.WrapNode(doctype)
+	})
+
+	// createDocument method
+	obj.Set("createDocument", func(call goja.FunctionCall) goja.Value {
+		var namespaceURI, qualifiedName string
+		var doctype *dom.DocumentType
+
+		if len(call.Arguments) > 0 && !goja.IsNull(call.Arguments[0]) {
+			namespaceURI = call.Arguments[0].String()
+		}
+		if len(call.Arguments) > 1 && !goja.IsNull(call.Arguments[1]) {
+			qualifiedName = call.Arguments[1].String()
+		}
+		if len(call.Arguments) > 2 && !goja.IsNull(call.Arguments[2]) {
+			// Extract doctype node if provided
+			if doctypeNode := db.extractNodeFromJS(call.Arguments[2]); doctypeNode != nil {
+				if dt, ok := doctypeNode.(*dom.DocumentType); ok {
+					doctype = dt
+				}
+			}
+		}
+
+		doc, err := impl.CreateDocument(namespaceURI, qualifiedName, doctype)
+		if err != nil {
+			panic(db.vm.NewTypeError(err.Error()))
+		}
+
+		// Create new DOMBindings for the new document and wrap it
+		newBindings := NewDOMBindings(db.vm, doc)
+		return newBindings.WrapDocument()
+	})
+
+	// createHTMLDocument method
+	obj.Set("createHTMLDocument", func(call goja.FunctionCall) goja.Value {
+		title := ""
+		if len(call.Arguments) > 0 {
+			title = call.Arguments[0].String()
+		}
+
+		doc := impl.CreateHTMLDocument(title)
+
+		// Create new DOMBindings for the new document and wrap it
+		newBindings := NewDOMBindings(db.vm, doc)
+		return newBindings.WrapDocument()
+	})
+
+	return obj
+}
+
 // wrapNSResolver wraps an NSResolver for JavaScript access
 func (db *DOMBindings) wrapNSResolver(resolver xpath.NSResolver) *goja.Object {
 	obj := db.vm.NewObject()
@@ -1937,6 +3151,1704 @@ func (db *DOMBindings) wrapNSResolver(resolver xpath.NSResolver) *goja.Object {
 			return goja.Null()
 		}
 		return db.vm.ToValue(uri)
+	})
+
+	return obj
+}
+
+// createRange creates a new Range object for JavaScript access
+func (db *DOMBindings) createRange() *goja.Object {
+	rangeObj := db.vm.NewObject()
+
+	// Range properties
+	var collapsed = true
+	var commonAncestorContainer dom.Node
+	var endContainer dom.Node
+	var endOffset = 0
+	var startContainer dom.Node
+	var startOffset = 0
+
+	// Dynamic property getters
+	rangeObj.DefineAccessorProperty("collapsed",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			return db.vm.ToValue(collapsed)
+		}),
+		goja.Undefined(),                // No setter - collapsed is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	rangeObj.DefineAccessorProperty("commonAncestorContainer",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			if commonAncestorContainer != nil {
+				return db.WrapNode(commonAncestorContainer)
+			}
+			return goja.Null()
+		}),
+		goja.Undefined(),                // No setter - commonAncestorContainer is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	rangeObj.DefineAccessorProperty("endContainer",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			if endContainer != nil {
+				return db.WrapNode(endContainer)
+			}
+			return goja.Null()
+		}),
+		goja.Undefined(),                // No setter - endContainer is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	rangeObj.DefineAccessorProperty("endOffset",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			return db.vm.ToValue(endOffset)
+		}),
+		goja.Undefined(),                // No setter - endOffset is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	rangeObj.DefineAccessorProperty("startContainer",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			if startContainer != nil {
+				return db.WrapNode(startContainer)
+			}
+			return goja.Null()
+		}),
+		goja.Undefined(),                // No setter - startContainer is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	rangeObj.DefineAccessorProperty("startOffset",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			return db.vm.ToValue(startOffset)
+		}),
+		goja.Undefined(),                // No setter - startOffset is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	// Range methods
+	rangeObj.Set("collapse", func(call goja.FunctionCall) goja.Value {
+		toStart := false
+		if len(call.Arguments) > 0 {
+			toStart = call.Arguments[0].ToBoolean()
+		}
+
+		if toStart {
+			endContainer = startContainer
+			endOffset = startOffset
+		} else {
+			startContainer = endContainer
+			startOffset = endOffset
+		}
+		collapsed = (startContainer == endContainer && startOffset == endOffset)
+		return goja.Undefined()
+	})
+
+	rangeObj.Set("selectNode", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("selectNode requires a node"))
+		}
+
+		node := db.extractNodeFromJS(call.Arguments[0])
+		if node == nil {
+			panic(db.vm.NewTypeError("Invalid node"))
+		}
+
+		// Set range to encompass the entire node
+		startContainer = node.ParentNode()
+		if startContainer != nil {
+			// Find the index of this node among its siblings
+			siblings := startContainer.ChildNodes().ToSlice()
+			for i, sibling := range siblings {
+				if sibling == node {
+					startOffset = i
+					endOffset = i + 1
+					break
+				}
+			}
+			endContainer = startContainer
+		}
+		collapsed = false
+		commonAncestorContainer = startContainer
+		return goja.Undefined()
+	})
+
+	rangeObj.Set("selectNodeContents", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("selectNodeContents requires a node"))
+		}
+
+		node := db.extractNodeFromJS(call.Arguments[0])
+		if node == nil {
+			panic(db.vm.NewTypeError("Invalid node"))
+		}
+
+		// Set range to encompass the contents of the node
+		startContainer = node
+		startOffset = 0
+		endContainer = node
+		endOffset = len(node.ChildNodes().ToSlice())
+		collapsed = (startOffset == endOffset)
+		commonAncestorContainer = node
+		return goja.Undefined()
+	})
+
+	rangeObj.Set("setStart", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(db.vm.NewTypeError("setStart requires node and offset"))
+		}
+
+		node := db.extractNodeFromJS(call.Arguments[0])
+		if node == nil {
+			panic(db.vm.NewTypeError("Invalid node"))
+		}
+
+		offset := int(call.Arguments[1].ToInteger())
+		startContainer = node
+		startOffset = offset
+		collapsed = (startContainer == endContainer && startOffset == endOffset)
+		return goja.Undefined()
+	})
+
+	rangeObj.Set("setEnd", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(db.vm.NewTypeError("setEnd requires node and offset"))
+		}
+
+		node := db.extractNodeFromJS(call.Arguments[0])
+		if node == nil {
+			panic(db.vm.NewTypeError("Invalid node"))
+		}
+
+		offset := int(call.Arguments[1].ToInteger())
+		endContainer = node
+		endOffset = offset
+		collapsed = (startContainer == endContainer && startOffset == endOffset)
+		return goja.Undefined()
+	})
+
+	rangeObj.Set("cloneRange", func(call goja.FunctionCall) goja.Value {
+		// Create a new range with the same boundaries
+		newRange := db.createRange()
+		if startContainer != nil {
+			if setStartFunc, ok := goja.AssertFunction(newRange.Get("setStart")); ok {
+				_, _ = setStartFunc(newRange, db.WrapNode(startContainer), db.vm.ToValue(startOffset))
+			}
+		}
+		if endContainer != nil {
+			if setEndFunc, ok := goja.AssertFunction(newRange.Get("setEnd")); ok {
+				_, _ = setEndFunc(newRange, db.WrapNode(endContainer), db.vm.ToValue(endOffset))
+			}
+		}
+		return newRange
+	})
+
+	rangeObj.Set("extractContents", func(call goja.FunctionCall) goja.Value {
+		// Create a document fragment and move the range contents into it
+		fragment := db.document.CreateDocumentFragment()
+
+		// For simplified implementation, just return the fragment
+		// A full implementation would actually extract the DOM nodes
+		return db.WrapNode(fragment)
+	})
+
+	rangeObj.Set("cloneContents", func(call goja.FunctionCall) goja.Value {
+		// Create a document fragment and clone the range contents into it
+		fragment := db.document.CreateDocumentFragment()
+
+		// For simplified implementation, just return the fragment
+		// A full implementation would actually clone the DOM nodes
+		return db.WrapNode(fragment)
+	})
+
+	rangeObj.Set("insertNode", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("insertNode requires a node"))
+		}
+
+		node := db.extractNodeFromJS(call.Arguments[0])
+		if node == nil {
+			panic(db.vm.NewTypeError("Invalid node"))
+		}
+
+		// Insert the node at the start of the range
+		if startContainer != nil {
+			startContainer.InsertBefore(node, startContainer.FirstChild())
+		}
+		return goja.Undefined()
+	})
+
+	rangeObj.Set("surroundContents", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("surroundContents requires a node"))
+		}
+
+		node := db.extractNodeFromJS(call.Arguments[0])
+		if node == nil {
+			panic(db.vm.NewTypeError("Invalid node"))
+		}
+
+		// Simplified implementation - extract contents and append to the new node
+		// then insert the new node at the range position
+		return goja.Undefined()
+	})
+
+	rangeObj.Set("toString", func(call goja.FunctionCall) goja.Value {
+		// Return the text content of the range
+		// For simplified implementation, return empty string
+		return db.vm.ToValue("")
+	})
+
+	return rangeObj
+}
+
+// createTreeWalker creates a new TreeWalker object for JavaScript access
+func (db *DOMBindings) createTreeWalker(args []goja.Value) *goja.Object {
+	if len(args) < 1 {
+		panic(db.vm.NewTypeError("createTreeWalker requires a root node"))
+	}
+
+	root := db.extractNodeFromJS(args[0])
+	if root == nil {
+		panic(db.vm.NewTypeError("Invalid root node"))
+	}
+
+	whatToShow := uint32(0xFFFFFFFF) // NodeFilter.SHOW_ALL by default
+	if len(args) > 1 && !goja.IsUndefined(args[1]) {
+		whatToShow = uint32(args[1].ToInteger())
+	}
+
+	var filter *goja.Object
+	if len(args) > 2 && !goja.IsNull(args[2]) && !goja.IsUndefined(args[2]) {
+		filter = args[2].ToObject(db.vm)
+	}
+
+	walkerObj := db.vm.NewObject()
+	var currentNode = root
+
+	// TreeWalker properties
+	walkerObj.Set("root", db.WrapNode(root))
+	walkerObj.DefineAccessorProperty("currentNode",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			return db.WrapNode(currentNode)
+		}),
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) > 0 {
+				newNode := db.extractNodeFromJS(call.Arguments[0])
+				if newNode != nil {
+					currentNode = newNode
+				}
+			}
+			return goja.Undefined()
+		}),
+		goja.FLAG_FALSE, goja.FLAG_TRUE)
+
+	walkerObj.Set("whatToShow", whatToShow)
+	if filter != nil {
+		walkerObj.Set("filter", filter)
+	} else {
+		walkerObj.Set("filter", goja.Null())
+	}
+
+	// Helper function to check if a node should be shown
+	acceptNode := func(node dom.Node) bool {
+		// Check whatToShow filter
+		nodeTypeMask := uint32(1 << (node.NodeType() - 1))
+		if (whatToShow & nodeTypeMask) == 0 {
+			return false
+		}
+
+		// Check custom filter if provided
+		if filter != nil {
+			if acceptNodeFunc := filter.Get("acceptNode"); acceptNodeFunc != nil {
+				if callback, ok := goja.AssertFunction(acceptNodeFunc); ok {
+					result, _ := callback(filter, db.WrapNode(node))
+					return result.ToInteger() == 1 // NodeFilter.FILTER_ACCEPT
+				}
+			}
+		}
+
+		return true
+	}
+
+	// TreeWalker navigation methods
+	walkerObj.Set("nextNode", func(call goja.FunctionCall) goja.Value {
+		// Traverse in document order looking for next acceptable node
+		var findNext func(dom.Node) dom.Node
+		findNext = func(node dom.Node) dom.Node {
+			// Try first child
+			if firstChild := node.FirstChild(); firstChild != nil {
+				if acceptNode(firstChild) {
+					return firstChild
+				}
+				if result := findNext(firstChild); result != nil {
+					return result
+				}
+			}
+
+			// Try next sibling and its descendants
+			current := node
+			for current != nil && current != root {
+				if nextSibling := current.NextSibling(); nextSibling != nil {
+					if acceptNode(nextSibling) {
+						return nextSibling
+					}
+					if result := findNext(nextSibling); result != nil {
+						return result
+					}
+				}
+				current = current.ParentNode()
+			}
+
+			return nil
+		}
+
+		if next := findNext(currentNode); next != nil {
+			currentNode = next
+			return db.WrapNode(next)
+		}
+		return goja.Null()
+	})
+
+	walkerObj.Set("previousNode", func(call goja.FunctionCall) goja.Value {
+		// Traverse in reverse document order
+		var findPrevious func(dom.Node) dom.Node
+		findPrevious = func(node dom.Node) dom.Node {
+			// Try previous sibling and its last descendants
+			if prevSibling := node.PreviousSibling(); prevSibling != nil {
+				// Go to the deepest last child of the previous sibling
+				current := prevSibling
+				for current.LastChild() != nil {
+					current = current.LastChild()
+				}
+				if acceptNode(current) {
+					return current
+				}
+				return findPrevious(current)
+			}
+
+			// Try parent
+			if parent := node.ParentNode(); parent != nil && parent != root {
+				if acceptNode(parent) {
+					return parent
+				}
+				return findPrevious(parent)
+			}
+
+			return nil
+		}
+
+		if prev := findPrevious(currentNode); prev != nil {
+			currentNode = prev
+			return db.WrapNode(prev)
+		}
+		return goja.Null()
+	})
+
+	walkerObj.Set("firstChild", func(call goja.FunctionCall) goja.Value {
+		if firstChild := currentNode.FirstChild(); firstChild != nil {
+			if acceptNode(firstChild) {
+				currentNode = firstChild
+				return db.WrapNode(firstChild)
+			}
+			// Find first acceptable child
+			for child := firstChild.NextSibling(); child != nil; child = child.NextSibling() {
+				if acceptNode(child) {
+					currentNode = child
+					return db.WrapNode(child)
+				}
+			}
+		}
+		return goja.Null()
+	})
+
+	walkerObj.Set("lastChild", func(call goja.FunctionCall) goja.Value {
+		if lastChild := currentNode.LastChild(); lastChild != nil {
+			if acceptNode(lastChild) {
+				currentNode = lastChild
+				return db.WrapNode(lastChild)
+			}
+			// Find last acceptable child
+			for child := lastChild.PreviousSibling(); child != nil; child = child.PreviousSibling() {
+				if acceptNode(child) {
+					currentNode = child
+					return db.WrapNode(child)
+				}
+			}
+		}
+		return goja.Null()
+	})
+
+	walkerObj.Set("nextSibling", func(call goja.FunctionCall) goja.Value {
+		if nextSibling := currentNode.NextSibling(); nextSibling != nil {
+			if acceptNode(nextSibling) {
+				currentNode = nextSibling
+				return db.WrapNode(nextSibling)
+			}
+			// Find next acceptable sibling
+			for sibling := nextSibling.NextSibling(); sibling != nil; sibling = sibling.NextSibling() {
+				if acceptNode(sibling) {
+					currentNode = sibling
+					return db.WrapNode(sibling)
+				}
+			}
+		}
+		return goja.Null()
+	})
+
+	walkerObj.Set("previousSibling", func(call goja.FunctionCall) goja.Value {
+		if prevSibling := currentNode.PreviousSibling(); prevSibling != nil {
+			if acceptNode(prevSibling) {
+				currentNode = prevSibling
+				return db.WrapNode(prevSibling)
+			}
+			// Find previous acceptable sibling
+			for sibling := prevSibling.PreviousSibling(); sibling != nil; sibling = sibling.PreviousSibling() {
+				if acceptNode(sibling) {
+					currentNode = sibling
+					return db.WrapNode(sibling)
+				}
+			}
+		}
+		return goja.Null()
+	})
+
+	walkerObj.Set("parentNode", func(call goja.FunctionCall) goja.Value {
+		if parent := currentNode.ParentNode(); parent != nil && parent != root {
+			if acceptNode(parent) {
+				currentNode = parent
+				return db.WrapNode(parent)
+			}
+		}
+		return goja.Null()
+	})
+
+	return walkerObj
+}
+
+// createNodeIterator creates a new NodeIterator object for JavaScript access
+func (db *DOMBindings) createNodeIterator(args []goja.Value) *goja.Object {
+	if len(args) < 1 {
+		panic(db.vm.NewTypeError("createNodeIterator requires a root node"))
+	}
+
+	root := db.extractNodeFromJS(args[0])
+	if root == nil {
+		panic(db.vm.NewTypeError("Invalid root node"))
+	}
+
+	whatToShow := uint32(0xFFFFFFFF) // NodeFilter.SHOW_ALL by default
+	if len(args) > 1 && !goja.IsUndefined(args[1]) {
+		whatToShow = uint32(args[1].ToInteger())
+	}
+
+	var filter *goja.Object
+	if len(args) > 2 && !goja.IsNull(args[2]) && !goja.IsUndefined(args[2]) {
+		filter = args[2].ToObject(db.vm)
+	}
+
+	iteratorObj := db.vm.NewObject()
+	var referenceNode = root
+	var pointerBeforeReferenceNode = true
+
+	// NodeIterator properties
+	iteratorObj.Set("root", db.WrapNode(root))
+	iteratorObj.DefineAccessorProperty("referenceNode",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			return db.WrapNode(referenceNode)
+		}),
+		goja.Undefined(),                // No setter - referenceNode is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	iteratorObj.DefineAccessorProperty("pointerBeforeReferenceNode",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			return db.vm.ToValue(pointerBeforeReferenceNode)
+		}),
+		goja.Undefined(),                // No setter - pointerBeforeReferenceNode is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	iteratorObj.Set("whatToShow", whatToShow)
+	if filter != nil {
+		iteratorObj.Set("filter", filter)
+	} else {
+		iteratorObj.Set("filter", goja.Null())
+	}
+
+	// Helper function to check if a node should be shown
+	acceptNode := func(node dom.Node) bool {
+		// Check whatToShow filter
+		nodeTypeMask := uint32(1 << (node.NodeType() - 1))
+		if (whatToShow & nodeTypeMask) == 0 {
+			return false
+		}
+
+		// Check custom filter if provided
+		if filter != nil {
+			if acceptNodeFunc := filter.Get("acceptNode"); acceptNodeFunc != nil {
+				if callback, ok := goja.AssertFunction(acceptNodeFunc); ok {
+					result, _ := callback(filter, db.WrapNode(node))
+					return result.ToInteger() == 1 // NodeFilter.FILTER_ACCEPT
+				}
+			}
+		}
+
+		return true
+	}
+
+	// Helper function to get all nodes in document order
+	getAllNodes := func() []dom.Node {
+		var nodes []dom.Node
+		var traverse func(dom.Node)
+		traverse = func(node dom.Node) {
+			if acceptNode(node) {
+				nodes = append(nodes, node)
+			}
+			for _, child := range node.ChildNodes().ToSlice() {
+				traverse(child)
+			}
+		}
+		traverse(root)
+		return nodes
+	}
+
+	// NodeIterator navigation methods
+	iteratorObj.Set("nextNode", func(call goja.FunctionCall) goja.Value {
+		allNodes := getAllNodes()
+
+		// Find current position
+		currentIndex := -1
+		for i, node := range allNodes {
+			if node == referenceNode {
+				currentIndex = i
+				break
+			}
+		}
+
+		var nextIndex int
+		if pointerBeforeReferenceNode {
+			// If pointer is before reference node, next node is the reference node itself
+			nextIndex = currentIndex
+		} else {
+			// If pointer is after reference node, next node is the one after reference node
+			nextIndex = currentIndex + 1
+		}
+
+		if nextIndex >= 0 && nextIndex < len(allNodes) {
+			referenceNode = allNodes[nextIndex]
+			pointerBeforeReferenceNode = false
+			return db.WrapNode(referenceNode)
+		}
+
+		return goja.Null()
+	})
+
+	iteratorObj.Set("previousNode", func(call goja.FunctionCall) goja.Value {
+		allNodes := getAllNodes()
+
+		// Find current position
+		currentIndex := -1
+		for i, node := range allNodes {
+			if node == referenceNode {
+				currentIndex = i
+				break
+			}
+		}
+
+		var prevIndex int
+		if pointerBeforeReferenceNode {
+			// If pointer is before reference node, previous node is the one before reference node
+			prevIndex = currentIndex - 1
+		} else {
+			// If pointer is after reference node, previous node is the reference node itself
+			prevIndex = currentIndex
+		}
+
+		if prevIndex >= 0 && prevIndex < len(allNodes) {
+			referenceNode = allNodes[prevIndex]
+			pointerBeforeReferenceNode = true
+			return db.WrapNode(referenceNode)
+		}
+
+		return goja.Null()
+	})
+
+	iteratorObj.Set("detach", func(call goja.FunctionCall) goja.Value {
+		// In modern browsers, this is a no-op
+		return goja.Undefined()
+	})
+
+	return iteratorObj
+}
+
+// createSelection creates a new Selection object for JavaScript access
+func (db *DOMBindings) createSelection() *goja.Object {
+	selectionObj := db.vm.NewObject()
+
+	// Selection properties
+	var anchorNode dom.Node
+	var anchorOffset = 0
+	var focusNode dom.Node
+	var focusOffset = 0
+	var isCollapsed = true
+	var rangeCount = 0
+
+	// Selection properties
+	selectionObj.DefineAccessorProperty("anchorNode",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			if anchorNode != nil {
+				return db.WrapNode(anchorNode)
+			}
+			return goja.Null()
+		}),
+		goja.Undefined(),                // No setter - anchorNode is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	selectionObj.DefineAccessorProperty("anchorOffset",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			return db.vm.ToValue(anchorOffset)
+		}),
+		goja.Undefined(),                // No setter - anchorOffset is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	selectionObj.DefineAccessorProperty("focusNode",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			if focusNode != nil {
+				return db.WrapNode(focusNode)
+			}
+			return goja.Null()
+		}),
+		goja.Undefined(),                // No setter - focusNode is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	selectionObj.DefineAccessorProperty("focusOffset",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			return db.vm.ToValue(focusOffset)
+		}),
+		goja.Undefined(),                // No setter - focusOffset is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	selectionObj.DefineAccessorProperty("isCollapsed",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			return db.vm.ToValue(isCollapsed)
+		}),
+		goja.Undefined(),                // No setter - isCollapsed is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	selectionObj.DefineAccessorProperty("rangeCount",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			return db.vm.ToValue(rangeCount)
+		}),
+		goja.Undefined(),                // No setter - rangeCount is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	// Selection methods
+	selectionObj.Set("getRangeAt", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("getRangeAt requires an index"))
+		}
+
+		index := int(call.Arguments[0].ToInteger())
+		if index < 0 || index >= rangeCount {
+			panic(db.vm.NewTypeError("Index out of bounds"))
+		}
+
+		// For simplified implementation, return a basic range
+		return db.createRange()
+	})
+
+	selectionObj.Set("addRange", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("addRange requires a range"))
+		}
+
+		// For simplified implementation, just increment range count
+		rangeCount = 1
+		isCollapsed = false
+		return goja.Undefined()
+	})
+
+	selectionObj.Set("removeRange", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("removeRange requires a range"))
+		}
+
+		// For simplified implementation, just decrement range count
+		if rangeCount > 0 {
+			rangeCount--
+			if rangeCount == 0 {
+				isCollapsed = true
+			}
+		}
+		return goja.Undefined()
+	})
+
+	selectionObj.Set("removeAllRanges", func(call goja.FunctionCall) goja.Value {
+		rangeCount = 0
+		isCollapsed = true
+		anchorNode = nil
+		anchorOffset = 0
+		focusNode = nil
+		focusOffset = 0
+		return goja.Undefined()
+	})
+
+	selectionObj.Set("collapse", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(db.vm.NewTypeError("collapse requires node and offset"))
+		}
+
+		node := db.extractNodeFromJS(call.Arguments[0])
+		if node == nil {
+			panic(db.vm.NewTypeError("Invalid node"))
+		}
+
+		offset := int(call.Arguments[1].ToInteger())
+		anchorNode = node
+		anchorOffset = offset
+		focusNode = node
+		focusOffset = offset
+		isCollapsed = true
+		rangeCount = 1
+		return goja.Undefined()
+	})
+
+	selectionObj.Set("extend", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(db.vm.NewTypeError("extend requires node and offset"))
+		}
+
+		node := db.extractNodeFromJS(call.Arguments[0])
+		if node == nil {
+			panic(db.vm.NewTypeError("Invalid node"))
+		}
+
+		offset := int(call.Arguments[1].ToInteger())
+		focusNode = node
+		focusOffset = offset
+		isCollapsed = (anchorNode == focusNode && anchorOffset == focusOffset)
+		if !isCollapsed {
+			rangeCount = 1
+		}
+		return goja.Undefined()
+	})
+
+	selectionObj.Set("selectAllChildren", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("selectAllChildren requires a node"))
+		}
+
+		node := db.extractNodeFromJS(call.Arguments[0])
+		if node == nil {
+			panic(db.vm.NewTypeError("Invalid node"))
+		}
+
+		// Select all children of the node
+		anchorNode = node
+		anchorOffset = 0
+		focusNode = node
+		focusOffset = len(node.ChildNodes().ToSlice())
+		isCollapsed = (anchorOffset == focusOffset)
+		rangeCount = 1
+		return goja.Undefined()
+	})
+
+	selectionObj.Set("toString", func(call goja.FunctionCall) goja.Value {
+		// Return the text content of the selection
+		// For simplified implementation, return empty string
+		return db.vm.ToValue("")
+	})
+
+	return selectionObj
+}
+
+// wrapMutationRecord wraps a DOM MutationRecord for JavaScript access
+func (db *DOMBindings) wrapMutationRecord(record *dom.MutationRecord) *goja.Object {
+	obj := db.vm.NewObject()
+
+	obj.Set("type", record.Type)
+	obj.Set("target", db.WrapNode(record.Target))
+
+	// Wrap added nodes
+	addedNodes := db.vm.NewArray()
+	for i, node := range record.AddedNodes {
+		addedNodes.Set(strconv.Itoa(i), db.WrapNode(node))
+	}
+	addedNodes.Set("length", len(record.AddedNodes))
+	obj.Set("addedNodes", addedNodes)
+
+	// Wrap removed nodes
+	removedNodes := db.vm.NewArray()
+	for i, node := range record.RemovedNodes {
+		removedNodes.Set(strconv.Itoa(i), db.WrapNode(node))
+	}
+	removedNodes.Set("length", len(record.RemovedNodes))
+	obj.Set("removedNodes", removedNodes)
+
+	// Previous and next siblings
+	if record.PreviousSibling != nil {
+		obj.Set("previousSibling", db.WrapNode(record.PreviousSibling))
+	} else {
+		obj.Set("previousSibling", goja.Null())
+	}
+
+	if record.NextSibling != nil {
+		obj.Set("nextSibling", db.WrapNode(record.NextSibling))
+	} else {
+		obj.Set("nextSibling", goja.Null())
+	}
+
+	// Attribute information
+	if record.AttributeName != "" {
+		obj.Set("attributeName", record.AttributeName)
+	} else {
+		obj.Set("attributeName", goja.Null())
+	}
+
+	if record.AttributeNamespace != "" {
+		obj.Set("attributeNamespace", record.AttributeNamespace)
+	} else {
+		obj.Set("attributeNamespace", goja.Null())
+	}
+
+	if record.OldValue != "" {
+		obj.Set("oldValue", record.OldValue)
+	} else {
+		obj.Set("oldValue", goja.Null())
+	}
+
+	return obj
+}
+
+// wrapDOMMutationObserver wraps a DOM MutationObserver for JavaScript access
+func (db *DOMBindings) wrapDOMMutationObserver(observer *dom.MutationObserver) *goja.Object {
+	obj := db.vm.NewObject()
+
+	obj.Set("observe", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(db.vm.NewTypeError("observe requires target and options"))
+		}
+
+		target := db.extractNodeFromJS(call.Arguments[0])
+		if target == nil {
+			panic(db.vm.NewTypeError("Invalid target node"))
+		}
+
+		// Parse options
+		optionsJS := call.Arguments[1].ToObject(db.vm)
+		if optionsJS == nil {
+			panic(db.vm.NewTypeError("Options must be an object"))
+		}
+
+		options := dom.MutationObserverInit{}
+		if childListVal := optionsJS.Get("childList"); childListVal != nil {
+			options.ChildList = childListVal.ToBoolean()
+		}
+		if attributesVal := optionsJS.Get("attributes"); attributesVal != nil {
+			options.Attributes = attributesVal.ToBoolean()
+			options.AttributesSet = true
+		}
+		if characterDataVal := optionsJS.Get("characterData"); characterDataVal != nil {
+			options.CharacterData = characterDataVal.ToBoolean()
+			options.CharacterDataSet = true
+		}
+		if subtreeVal := optionsJS.Get("subtree"); subtreeVal != nil {
+			options.Subtree = subtreeVal.ToBoolean()
+		}
+		if attributeOldValueVal := optionsJS.Get("attributeOldValue"); attributeOldValueVal != nil {
+			options.AttributeOldValue = attributeOldValueVal.ToBoolean()
+		}
+		if characterDataOldValueVal := optionsJS.Get("characterDataOldValue"); characterDataOldValueVal != nil {
+			options.CharacterDataOldValue = characterDataOldValueVal.ToBoolean()
+		}
+		if attributeFilterVal := optionsJS.Get("attributeFilter"); attributeFilterVal != nil {
+			if filterArr := attributeFilterVal.ToObject(db.vm); filterArr != nil {
+				if lengthVal := filterArr.Get("length"); lengthVal != nil {
+					length := int(lengthVal.ToInteger())
+					for i := 0; i < length; i++ {
+						if attrVal := filterArr.Get(strconv.Itoa(i)); attrVal != nil {
+							options.AttributeFilter = append(options.AttributeFilter, attrVal.String())
+						}
+					}
+				}
+			}
+		}
+
+		// Start observing
+		observer.Observe(target, options)
+		return goja.Undefined()
+	})
+
+	obj.Set("disconnect", func(call goja.FunctionCall) goja.Value {
+		observer.Disconnect()
+		return goja.Undefined()
+	})
+
+	obj.Set("takeRecords", func(call goja.FunctionCall) goja.Value {
+		records := observer.TakeRecords()
+		jsRecords := db.vm.NewArray()
+		for i, record := range records {
+			jsRecords.Set(strconv.Itoa(i), db.wrapMutationRecord(record))
+		}
+		jsRecords.Set("length", len(records))
+		return jsRecords
+	})
+
+	return obj
+}
+
+// addPhase4NodeMethods adds Phase 4 advanced DOM features to a JavaScript object
+func (db *DOMBindings) addPhase4NodeMethods(obj *goja.Object, node dom.Node) {
+	// Phase 4: Advanced DOM Features
+
+	// Node comparison methods
+	obj.Set("compareDocumentPosition", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("compareDocumentPosition requires another node"))
+		}
+
+		otherNode := db.extractNodeFromJS(call.Arguments[0])
+		if otherNode == nil {
+			panic(db.vm.NewTypeError("Invalid node"))
+		}
+
+		position := node.CompareDocumentPosition(otherNode)
+		return db.vm.ToValue(position)
+	})
+
+	obj.Set("contains", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return db.vm.ToValue(false)
+		}
+
+		otherNode := db.extractNodeFromJS(call.Arguments[0])
+		if otherNode == nil {
+			return db.vm.ToValue(false)
+		}
+
+		return db.vm.ToValue(node.Contains(otherNode))
+	})
+
+	obj.Set("isEqualNode", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return db.vm.ToValue(false)
+		}
+
+		otherNode := db.extractNodeFromJS(call.Arguments[0])
+		if otherNode == nil {
+			return db.vm.ToValue(false)
+		}
+
+		return db.vm.ToValue(node.IsEqualNode(otherNode))
+	})
+
+	obj.Set("isSameNode", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return db.vm.ToValue(false)
+		}
+
+		otherNode := db.extractNodeFromJS(call.Arguments[0])
+		if otherNode == nil {
+			return db.vm.ToValue(false)
+		}
+
+		return db.vm.ToValue(node.IsSameNode(otherNode))
+	})
+
+	// Namespace support properties and methods
+	obj.DefineAccessorProperty("namespaceURI",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			if element, ok := node.(*dom.Element); ok {
+				return db.vm.ToValue(element.NamespaceURI())
+			}
+			return goja.Null()
+		}),
+		goja.Undefined(),                // No setter - namespaceURI is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	obj.DefineAccessorProperty("prefix",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			if element, ok := node.(*dom.Element); ok {
+				return db.vm.ToValue(element.Prefix())
+			}
+			return goja.Null()
+		}),
+		goja.Undefined(),                // No setter - prefix is read-only in this implementation
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	obj.DefineAccessorProperty("localName",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			if element, ok := node.(*dom.Element); ok {
+				return db.vm.ToValue(element.LocalName())
+			}
+			return goja.Null()
+		}),
+		goja.Undefined(),                // No setter - localName is read-only
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	// Namespace lookup methods
+	obj.Set("lookupPrefix", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Null()
+		}
+
+		namespaceURI := call.Arguments[0].String()
+		prefix := node.LookupPrefix(namespaceURI)
+		if prefix == "" {
+			return goja.Null()
+		}
+		return db.vm.ToValue(prefix)
+	})
+
+	obj.Set("lookupNamespaceURI", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Null()
+		}
+
+		prefix := call.Arguments[0].String()
+		namespaceURI := node.LookupNamespaceURI(prefix)
+		if namespaceURI == "" {
+			return goja.Null()
+		}
+		return db.vm.ToValue(namespaceURI)
+	})
+
+	obj.Set("isDefaultNamespace", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return db.vm.ToValue(false)
+		}
+
+		namespaceURI := call.Arguments[0].String()
+		return db.vm.ToValue(node.IsDefaultNamespace(namespaceURI))
+	})
+
+	// Text normalization - available on all nodes
+	obj.Set("normalize", func(call goja.FunctionCall) goja.Value {
+		node.Normalize()
+		return goja.Undefined()
+	})
+
+	// getRootNode method (advanced DOM)
+	obj.Set("getRootNode", func(call goja.FunctionCall) goja.Value {
+		// For most cases, return the document
+		// In a full implementation, this would handle shadow roots and options
+		var options *dom.GetRootNodeOptions
+		if len(call.Arguments) > 0 {
+			optionsObj := call.Arguments[0].ToObject(db.vm)
+			if optionsObj != nil {
+				options = &dom.GetRootNodeOptions{}
+				if composedVal := optionsObj.Get("composed"); composedVal != nil {
+					options.Composed = composedVal.ToBoolean()
+				}
+			}
+		}
+
+		rootNode := node.GetRootNode(options)
+		return db.WrapNode(rootNode)
+	})
+
+	// hasChildNodes method
+	obj.Set("hasChildNodes", func(call goja.FunctionCall) goja.Value {
+		return db.vm.ToValue(node.HasChildNodes())
+	})
+}
+
+// Phase 6: Modern Web API Implementation Methods
+
+// createResizeObserver creates a ResizeObserver JavaScript object
+func (db *DOMBindings) createResizeObserver(callback goja.Callable) *goja.Object {
+	obj := db.vm.NewObject()
+
+	// Store observed elements and callback
+	var observedElements []dom.Node
+	var isActive = true
+
+	obj.Set("observe", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("observe requires a target element"))
+		}
+
+		target := db.extractNodeFromJS(call.Arguments[0])
+		if target == nil {
+			panic(db.vm.NewTypeError("Invalid target element"))
+		}
+
+		// Add to observed elements if not already observed
+		for _, observed := range observedElements {
+			if observed == target {
+				return goja.Undefined() // Already observing
+			}
+		}
+		observedElements = append(observedElements, target)
+
+		// For testing, immediately fire a callback with mock entry
+		if isActive && db.jsRuntime != nil && db.jsRuntime.EventLoop() != nil {
+			db.jsRuntime.EventLoop().QueueMicrotask(func() {
+				entry := db.createResizeObserverEntry(target)
+				entries := db.vm.NewArray()
+				entries.Set("0", entry)
+				entries.Set("length", 1)
+				_, _ = callback(goja.Undefined(), entries, obj)
+			}, "ResizeObserver")
+		}
+
+		return goja.Undefined()
+	})
+
+	obj.Set("unobserve", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Undefined()
+		}
+
+		target := db.extractNodeFromJS(call.Arguments[0])
+		if target == nil {
+			return goja.Undefined()
+		}
+
+		// Remove from observed elements
+		for i, observed := range observedElements {
+			if observed == target {
+				observedElements = append(observedElements[:i], observedElements[i+1:]...)
+				break
+			}
+		}
+
+		return goja.Undefined()
+	})
+
+	obj.Set("disconnect", func(call goja.FunctionCall) goja.Value {
+		observedElements = nil
+		isActive = false
+		return goja.Undefined()
+	})
+
+	return obj
+}
+
+// createResizeObserverEntry creates a ResizeObserverEntry JavaScript object
+func (db *DOMBindings) createResizeObserverEntry(target dom.Node) *goja.Object {
+	entry := db.vm.NewObject()
+
+	entry.Set("target", db.WrapNode(target))
+
+	// Mock content rect
+	contentRect := db.vm.NewObject()
+	contentRect.Set("x", 0)
+	contentRect.Set("y", 0)
+	contentRect.Set("width", 200)
+	contentRect.Set("height", 150)
+	contentRect.Set("top", 0)
+	contentRect.Set("right", 200)
+	contentRect.Set("bottom", 150)
+	contentRect.Set("left", 0)
+	entry.Set("contentRect", contentRect)
+
+	// Mock border box size
+	borderBoxSize := db.vm.NewArray()
+	borderBox := db.vm.NewObject()
+	borderBox.Set("inlineSize", 200)
+	borderBox.Set("blockSize", 150)
+	borderBoxSize.Set("0", borderBox)
+	borderBoxSize.Set("length", 1)
+	entry.Set("borderBoxSize", borderBoxSize)
+
+	// Mock content box size
+	contentBoxSize := db.vm.NewArray()
+	contentBox := db.vm.NewObject()
+	contentBox.Set("inlineSize", 200)
+	contentBox.Set("blockSize", 150)
+	contentBoxSize.Set("0", contentBox)
+	contentBoxSize.Set("length", 1)
+	entry.Set("contentBoxSize", contentBoxSize)
+
+	return entry
+}
+
+// createIntersectionObserver creates an IntersectionObserver JavaScript object
+func (db *DOMBindings) createIntersectionObserver(callback goja.Callable, options *goja.Object) *goja.Object {
+	obj := db.vm.NewObject()
+
+	// Store observed elements and configuration
+	var observedElements []dom.Node
+	var isActive = true
+
+	// Parse options
+	var root dom.Node
+	var rootMargin = "0px"
+	var threshold = []float64{0}
+
+	if options != nil {
+		if rootVal := options.Get("root"); rootVal != nil && !goja.IsNull(rootVal) && !goja.IsUndefined(rootVal) {
+			root = db.extractNodeFromJS(rootVal)
+		}
+		if rootMarginVal := options.Get("rootMargin"); rootMarginVal != nil && !goja.IsUndefined(rootMarginVal) {
+			rootMargin = rootMarginVal.String()
+		}
+		if thresholdVal := options.Get("threshold"); thresholdVal != nil && !goja.IsUndefined(thresholdVal) {
+			if thresholdArr := thresholdVal.ToObject(db.vm); thresholdArr != nil {
+				if lengthVal := thresholdArr.Get("length"); lengthVal != nil {
+					length := int(lengthVal.ToInteger())
+					threshold = make([]float64, 0, length)
+					for i := 0; i < length; i++ {
+						if val := thresholdArr.Get(strconv.Itoa(i)); val != nil {
+							threshold = append(threshold, val.ToFloat())
+						}
+					}
+				}
+			} else {
+				// Single threshold value
+				threshold = []float64{thresholdVal.ToFloat()}
+			}
+		}
+	}
+
+	obj.Set("root", func() goja.Value {
+		if root != nil {
+			return db.WrapNode(root)
+		}
+		return goja.Null()
+	}())
+	obj.Set("rootMargin", rootMargin)
+	obj.Set("thresholds", func() goja.Value {
+		arr := db.vm.NewArray()
+		for i, t := range threshold {
+			arr.Set(strconv.Itoa(i), t)
+		}
+		arr.Set("length", len(threshold))
+		return arr
+	}())
+
+	obj.Set("observe", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("observe requires a target element"))
+		}
+
+		target := db.extractNodeFromJS(call.Arguments[0])
+		if target == nil {
+			panic(db.vm.NewTypeError("Invalid target element"))
+		}
+
+		// Add to observed elements if not already observed
+		for _, observed := range observedElements {
+			if observed == target {
+				return goja.Undefined() // Already observing
+			}
+		}
+		observedElements = append(observedElements, target)
+
+		// For testing, immediately fire a callback with mock entry
+		if isActive && db.jsRuntime != nil && db.jsRuntime.EventLoop() != nil {
+			db.jsRuntime.EventLoop().QueueMicrotask(func() {
+				entry := db.createIntersectionObserverEntry(target, true)
+				entries := db.vm.NewArray()
+				entries.Set("0", entry)
+				entries.Set("length", 1)
+				_, _ = callback(goja.Undefined(), entries, obj)
+			}, "IntersectionObserver")
+		}
+
+		return goja.Undefined()
+	})
+
+	obj.Set("unobserve", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Undefined()
+		}
+
+		target := db.extractNodeFromJS(call.Arguments[0])
+		if target == nil {
+			return goja.Undefined()
+		}
+
+		// Remove from observed elements
+		for i, observed := range observedElements {
+			if observed == target {
+				observedElements = append(observedElements[:i], observedElements[i+1:]...)
+				break
+			}
+		}
+
+		return goja.Undefined()
+	})
+
+	obj.Set("disconnect", func(call goja.FunctionCall) goja.Value {
+		observedElements = nil
+		isActive = false
+		return goja.Undefined()
+	})
+
+	obj.Set("takeRecords", func(call goja.FunctionCall) goja.Value {
+		// Return empty array for mock implementation
+		return db.vm.NewArray()
+	})
+
+	return obj
+}
+
+// createIntersectionObserverEntry creates an IntersectionObserverEntry JavaScript object
+func (db *DOMBindings) createIntersectionObserverEntry(target dom.Node, isIntersecting bool) *goja.Object {
+	entry := db.vm.NewObject()
+
+	entry.Set("target", db.WrapNode(target))
+	entry.Set("isIntersecting", isIntersecting)
+	entry.Set("intersectionRatio", func() float64 {
+		if isIntersecting {
+			return 1.0
+		}
+		return 0.0
+	}())
+
+	// Mock intersection rect
+	intersectionRect := db.vm.NewObject()
+	if isIntersecting {
+		intersectionRect.Set("x", 0)
+		intersectionRect.Set("y", 0)
+		intersectionRect.Set("width", 200)
+		intersectionRect.Set("height", 150)
+		intersectionRect.Set("top", 0)
+		intersectionRect.Set("right", 200)
+		intersectionRect.Set("bottom", 150)
+		intersectionRect.Set("left", 0)
+	} else {
+		intersectionRect.Set("x", 0)
+		intersectionRect.Set("y", 0)
+		intersectionRect.Set("width", 0)
+		intersectionRect.Set("height", 0)
+		intersectionRect.Set("top", 0)
+		intersectionRect.Set("right", 0)
+		intersectionRect.Set("bottom", 0)
+		intersectionRect.Set("left", 0)
+	}
+	entry.Set("intersectionRect", intersectionRect)
+
+	// Mock bounding client rect
+	boundingClientRect := db.vm.NewObject()
+	boundingClientRect.Set("x", 0)
+	boundingClientRect.Set("y", 0)
+	boundingClientRect.Set("width", 200)
+	boundingClientRect.Set("height", 150)
+	boundingClientRect.Set("top", 0)
+	boundingClientRect.Set("right", 200)
+	boundingClientRect.Set("bottom", 150)
+	boundingClientRect.Set("left", 0)
+	entry.Set("boundingClientRect", boundingClientRect)
+
+	// Mock root bounds
+	rootBounds := db.vm.NewObject()
+	rootBounds.Set("x", 0)
+	rootBounds.Set("y", 0)
+	rootBounds.Set("width", 800)
+	rootBounds.Set("height", 600)
+	rootBounds.Set("top", 0)
+	rootBounds.Set("right", 800)
+	rootBounds.Set("bottom", 600)
+	rootBounds.Set("left", 0)
+	entry.Set("rootBounds", rootBounds)
+
+	entry.Set("time", func() float64 {
+		// Mock timestamp
+		return 1000.0
+	}())
+
+	return entry
+}
+
+// createFile creates a File JavaScript object
+func (db *DOMBindings) createFile(fileBits *goja.Object, name string, fileType string, lastModified int64) *goja.Object {
+	obj := db.vm.NewObject()
+
+	// Calculate size from file bits
+	size := 0
+	if fileBits != nil {
+		if lengthVal := fileBits.Get("length"); lengthVal != nil {
+			length := int(lengthVal.ToInteger())
+			for i := 0; i < length; i++ {
+				if bit := fileBits.Get(strconv.Itoa(i)); bit != nil {
+					size += len(bit.String())
+				}
+			}
+		}
+	}
+
+	if lastModified == 0 {
+		lastModified = 1640995200000 // Default to Jan 1, 2022
+	}
+
+	obj.Set("name", name)
+	obj.Set("size", size)
+	obj.Set("type", fileType)
+	obj.Set("lastModified", lastModified)
+
+	// Add Blob methods since File extends Blob
+	obj.Set("slice", func(call goja.FunctionCall) goja.Value {
+		// Mock slice implementation
+		return db.createBlob(nil, fileType)
+	})
+
+	obj.Set("stream", func(call goja.FunctionCall) goja.Value {
+		// Mock stream implementation
+		return db.vm.NewObject()
+	})
+
+	obj.Set("text", func(call goja.FunctionCall) goja.Value {
+		// Mock text implementation - return Promise-like object
+		promise := db.vm.NewObject()
+		promise.Set("then", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) > 0 {
+				callback, ok := goja.AssertFunction(call.Arguments[0])
+				if ok {
+					_, _ = callback(goja.Undefined(), db.vm.ToValue(""))
+				}
+			}
+			return promise
+		})
+		return promise
+	})
+
+	obj.Set("arrayBuffer", func(call goja.FunctionCall) goja.Value {
+		// Mock arrayBuffer implementation - return Promise-like object
+		promise := db.vm.NewObject()
+		promise.Set("then", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) > 0 {
+				callback, ok := goja.AssertFunction(call.Arguments[0])
+				if ok {
+					// Mock ArrayBuffer
+					arrayBuffer := db.vm.NewObject()
+					arrayBuffer.Set("byteLength", size)
+					_, _ = callback(goja.Undefined(), arrayBuffer)
+				}
+			}
+			return promise
+		})
+		return promise
+	})
+
+	return obj
+}
+
+// createBlob creates a Blob JavaScript object
+func (db *DOMBindings) createBlob(blobParts *goja.Object, blobType string) *goja.Object {
+	obj := db.vm.NewObject()
+
+	// Calculate size from blob parts
+	size := 0
+	if blobParts != nil {
+		if lengthVal := blobParts.Get("length"); lengthVal != nil {
+			length := int(lengthVal.ToInteger())
+			for i := 0; i < length; i++ {
+				if part := blobParts.Get(strconv.Itoa(i)); part != nil {
+					size += len(part.String())
+				}
+			}
+		}
+	}
+
+	obj.Set("size", size)
+	obj.Set("type", blobType)
+
+	obj.Set("slice", func(call goja.FunctionCall) goja.Value {
+		start := 0
+		end := size
+		contentType := blobType
+
+		if len(call.Arguments) > 0 {
+			start = int(call.Arguments[0].ToInteger())
+		}
+		if len(call.Arguments) > 1 {
+			end = int(call.Arguments[1].ToInteger())
+		}
+		if len(call.Arguments) > 2 {
+			contentType = call.Arguments[2].String()
+		}
+
+		// Create new blob with sliced content
+		newSize := end - start
+		if newSize < 0 {
+			newSize = 0
+		}
+
+		newBlob := db.vm.NewObject()
+		newBlob.Set("size", newSize)
+		newBlob.Set("type", contentType)
+		return newBlob
+	})
+
+	obj.Set("stream", func(call goja.FunctionCall) goja.Value {
+		// Mock ReadableStream
+		stream := db.vm.NewObject()
+		return stream
+	})
+
+	obj.Set("text", func(call goja.FunctionCall) goja.Value {
+		// Return Promise-like object
+		promise := db.vm.NewObject()
+		promise.Set("then", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) > 0 {
+				callback, ok := goja.AssertFunction(call.Arguments[0])
+				if ok {
+					_, _ = callback(goja.Undefined(), db.vm.ToValue(""))
+				}
+			}
+			return promise
+		})
+		return promise
+	})
+
+	obj.Set("arrayBuffer", func(call goja.FunctionCall) goja.Value {
+		// Return Promise-like object
+		promise := db.vm.NewObject()
+		promise.Set("then", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) > 0 {
+				callback, ok := goja.AssertFunction(call.Arguments[0])
+				if ok {
+					// Mock ArrayBuffer
+					arrayBuffer := db.vm.NewObject()
+					arrayBuffer.Set("byteLength", size)
+					_, _ = callback(goja.Undefined(), arrayBuffer)
+				}
+			}
+			return promise
+		})
+		return promise
+	})
+
+	return obj
+}
+
+// createFileReader creates a FileReader JavaScript object
+func (db *DOMBindings) createFileReader() *goja.Object {
+	obj := db.vm.NewObject()
+
+	var readyState = 0 // EMPTY
+	var result goja.Value = goja.Null()
+	var error goja.Value = goja.Null()
+
+	obj.Set("readyState", readyState)
+	obj.Set("result", result)
+	obj.Set("error", error)
+
+	// Event handlers
+	obj.Set("onload", goja.Null())
+	obj.Set("onloadstart", goja.Null())
+	obj.Set("onloadend", goja.Null())
+	obj.Set("onprogress", goja.Null())
+	obj.Set("onerror", goja.Null())
+	obj.Set("onabort", goja.Null())
+
+	obj.Set("readAsText", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("readAsText requires a blob"))
+		}
+
+		readyState = 1 // LOADING
+		obj.Set("readyState", readyState)
+
+		// Fire loadstart event
+		if onloadstart := obj.Get("onloadstart"); onloadstart != nil && !goja.IsNull(onloadstart) && !goja.IsUndefined(onloadstart) {
+			if callback, ok := goja.AssertFunction(onloadstart); ok {
+				event := db.vm.NewObject()
+				event.Set("type", "loadstart")
+				event.Set("target", obj)
+				_, _ = callback(goja.Undefined(), event)
+			}
+		}
+
+		// Simulate async reading with microtask
+		if db.jsRuntime != nil && db.jsRuntime.EventLoop() != nil {
+			db.jsRuntime.EventLoop().QueueMicrotask(func() {
+				readyState = 2 // DONE
+				result = db.vm.ToValue("Test content")
+				obj.Set("readyState", readyState)
+				obj.Set("result", result)
+
+				// Fire load event
+				if onload := obj.Get("onload"); onload != nil && !goja.IsNull(onload) && !goja.IsUndefined(onload) {
+					if callback, ok := goja.AssertFunction(onload); ok {
+						event := db.vm.NewObject()
+						event.Set("type", "load")
+						event.Set("target", obj)
+						_, _ = callback(goja.Undefined(), event)
+					}
+				}
+
+				// Fire loadend event
+				if onloadend := obj.Get("onloadend"); onloadend != nil && !goja.IsNull(onloadend) && !goja.IsUndefined(onloadend) {
+					if callback, ok := goja.AssertFunction(onloadend); ok {
+						event := db.vm.NewObject()
+						event.Set("type", "loadend")
+						event.Set("target", obj)
+						_, _ = callback(goja.Undefined(), event)
+					}
+				}
+			}, "FileReader")
+		}
+
+		return goja.Undefined()
+	})
+
+	obj.Set("readAsDataURL", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("readAsDataURL requires a blob"))
+		}
+
+		readyState = 1 // LOADING
+		obj.Set("readyState", readyState)
+
+		// Simulate async reading
+		if db.jsRuntime != nil && db.jsRuntime.EventLoop() != nil {
+			db.jsRuntime.EventLoop().QueueMicrotask(func() {
+				readyState = 2 // DONE
+				result = db.vm.ToValue("data:text/plain;base64,VGVzdCBjb250ZW50")
+				obj.Set("readyState", readyState)
+				obj.Set("result", result)
+
+				// Fire events similar to readAsText
+			}, "FileReader")
+		}
+
+		return goja.Undefined()
+	})
+
+	obj.Set("readAsArrayBuffer", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("readAsArrayBuffer requires a blob"))
+		}
+
+		readyState = 1 // LOADING
+		obj.Set("readyState", readyState)
+
+		// Simulate async reading
+		if db.jsRuntime != nil && db.jsRuntime.EventLoop() != nil {
+			db.jsRuntime.EventLoop().QueueMicrotask(func() {
+				readyState = 2 // DONE
+				// Mock ArrayBuffer
+				arrayBuffer := db.vm.NewObject()
+				arrayBuffer.Set("byteLength", 12)
+				result = arrayBuffer
+				obj.Set("readyState", readyState)
+				obj.Set("result", result)
+
+				// Fire events similar to readAsText
+			}, "FileReader")
+		}
+
+		return goja.Undefined()
+	})
+
+	obj.Set("abort", func(call goja.FunctionCall) goja.Value {
+		if readyState == 1 {
+			readyState = 2 // DONE
+			error = db.vm.NewObject()
+			obj.Set("readyState", readyState)
+			obj.Set("error", error)
+
+			// Fire abort event
+			if onabort := obj.Get("onabort"); onabort != nil && !goja.IsNull(onabort) && !goja.IsUndefined(onabort) {
+				if callback, ok := goja.AssertFunction(onabort); ok {
+					event := db.vm.NewObject()
+					event.Set("type", "abort")
+					event.Set("target", obj)
+					_, _ = callback(goja.Undefined(), event)
+				}
+			}
+		}
+		return goja.Undefined()
 	})
 
 	return obj

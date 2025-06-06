@@ -351,6 +351,7 @@ func (r *Runtime) intervalCallback(timer *Timer) func() {
 func (r *Runtime) setupDOM() {
 	// Create DOM bindings wrapper
 	domBindings := NewDOMBindings(r.vm, r.document)
+	domBindings.jsRuntime = r // Set reference to runtime for event loop access
 
 	// Set document as global
 	r.global.Set("document", domBindings.WrapDocument())

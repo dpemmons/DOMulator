@@ -1825,6 +1825,8 @@ func queueTreeMutationRecord(target Node, addedNodes, removedNodes []Node, previ
 			PreviousSibling: previousSibling,
 			NextSibling:     nextSibling,
 		})
+		// Process mutation observers to deliver the records to callbacks
+		registry.ProcessMutationObservers()
 	}
 }
 

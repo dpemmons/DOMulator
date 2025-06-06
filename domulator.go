@@ -110,6 +110,56 @@ func (test *Test) SetDebugMode(debug bool) *Test {
 	return test
 }
 
+// ===== EVENT LOOP CONTROL =====
+
+// AdvanceTime advances virtual time by the specified duration.
+// This will process any timers (setTimeout/setInterval) that should
+// fire within this time window, along with their associated microtasks.
+// This is particularly useful for testing asynchronous JavaScript code
+// that relies on setTimeout or setInterval.
+//
+// Example:
+//
+//	test.ExecuteScript(`setTimeout(() => {
+//	  document.getElementById('status').textContent = 'Ready';
+//	}, 1000)`)
+//	test.AdvanceTime(1 * time.Second)
+//	test.AssertElement("#status").HasText("Ready")
+func (test *Test) AdvanceTime(duration time.Duration) *Test {
+	test.harness.AdvanceTime(duration)
+	return test
+}
+
+// FlushMicrotasks processes all pending microtasks immediately.
+// This is useful for testing Promise-based code or any operations
+// that use queueMicrotask(). Microtasks are processed synchronously
+// and will complete before this method returns.
+//
+// Example:
+//
+//	test.ExecuteScript(`
+//	  fetch('/api/data')
+//	    .then(r => r.json())
+//	    .then(data => {
+//	      document.getElementById('result').textContent = data.value;
+//	    })
+//	`)
+//	test.FlushMicrotasks()
+//	test.AssertElement("#result").HasText("expected value")
+func (test *Test) FlushMicrotasks() *Test {
+	test.harness.FlushMicrotasks()
+	return test
+}
+
+// ProcessPendingTimers executes all timers that are ready to fire
+// based on the current virtual time, without advancing time.
+// This is useful for processing animation frames or timers that
+// should execute at the current moment.
+func (test *Test) ProcessPendingTimers() *Test {
+	test.harness.ProcessPendingTimers()
+	return test
+}
+
 // Interaction Methods - These methods simulate user interactions with the page
 
 // Click simulates a click event on the first element matching the selector.

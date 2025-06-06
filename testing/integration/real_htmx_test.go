@@ -127,6 +127,7 @@ func TestRealHTMXIntegration(t *testing.T) {
 
 		case "/api/hello":
 			// API endpoint for GET request
+			t.Logf("API /api/hello called")
 			w.Header().Set("Content-Type", "text/html")
 			w.Write([]byte(`<div class="success">Hello from HTMX! 👋</div>`))
 
@@ -158,6 +159,10 @@ func TestRealHTMXIntegration(t *testing.T) {
 
 	// Use the new DOMulator API to test real HTMX functionality
 	test := domulator.NewTest(t)
+
+	// Enable debug mode to see what's happening with JavaScript
+	test.SetDebugMode(true)
+
 	test.WithServer(server).Navigate("/")
 
 	// Verify the page loaded correctly

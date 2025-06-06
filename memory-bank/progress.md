@@ -60,6 +60,11 @@
 - **Event phases**: Capturing, at-target, and bubbling phases correctly implemented
 - **Full Event Coverage**: 25+ event types with complete Go → JavaScript event flow testing
 - **DOM Event Propagation**: Fixed to match WHATWG DOM Section 2.11.4 specification
+- **🚀 NEW: Async Event Loop Control**: Deterministic control for asynchronous JavaScript testing
+  - **test.AdvanceTime()**: Controls setTimeout/setInterval execution with precise timing
+  - **test.FlushMicrotasks()**: Processes queued microtasks (queueMicrotask, Promise.then)
+  - **Async Event Validation**: Complete testing of async JavaScript event handling scenarios
+  - **Original Problem Solved**: Tests now fully validate JavaScript receives and processes events asynchronously
 
 ## Integration Testing ✅
 

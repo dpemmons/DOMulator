@@ -109,6 +109,9 @@ func (h *TestHarness) Navigate(url string) *TestHarness {
 	// Create JavaScript runtime with DOM integration
 	runtime := js.New(document)
 
+	// Set up event loop for proper asynchronous behavior
+	runtime.SetupEventLoop(true) // Use virtual time for deterministic tests
+
 	// Store in domulator wrapper
 	h.domulator = &DOMulator{
 		document: document,
@@ -153,6 +156,9 @@ func (h *TestHarness) LoadHTML(html string) *TestHarness {
 
 	// Create JavaScript runtime with DOM integration
 	runtime := js.New(document)
+
+	// Set up event loop for proper asynchronous behavior
+	runtime.SetupEventLoop(true) // Use virtual time for deterministic tests
 
 	// Store in domulator wrapper
 	h.domulator = &DOMulator{
@@ -224,10 +230,54 @@ func (h *TestHarness) SetHeader(key, value string) *TestHarness {
 
 // SetDebugMode enables or disables verbose console output from JavaScript
 func (h *TestHarness) SetDebugMode(debug bool) *TestHarness {
+	h.config.DebugMode = debug
 	if h.domulator != nil && h.domulator.runtime != nil {
 		h.domulator.runtime.SetDebugMode(debug)
 	}
 	return h
+}
+
+// AdvanceTime advances virtual time by the specified duration
+func (h *TestHarness) AdvanceTime(duration time.Duration) {
+	if h.domulator == nil || h.domulator.runtime == nil {
+		panic("no document loaded - call LoadHTML() or Navigate() first")
+	}
+
+	eventLoop := h.domulator.runtime.EventLoop()
+	if eventLoop == nil {
+		panic("event loop not initialized")
+	}
+
+	eventLoop.AdvanceTime(duration)
+}
+
+// FlushMicrotasks processes all pending microtasks immediately
+func (h *TestHarness) FlushMicrotasks() {
+	if h.domulator == nil || h.domulator.runtime == nil {
+		panic("no document loaded - call LoadHTML() or Navigate() first")
+	}
+
+	eventLoop := h.domulator.runtime.EventLoop()
+	if eventLoop == nil {
+		panic("event loop not initialized")
+	}
+
+	eventLoop.ProcessMicrotasks()
+}
+
+// ProcessPendingTimers executes all timers that are ready to fire
+func (h *TestHarness) ProcessPendingTimers() {
+	if h.domulator == nil || h.domulator.runtime == nil {
+		panic("no document loaded - call LoadHTML() or Navigate() first")
+	}
+
+	eventLoop := h.domulator.runtime.EventLoop()
+	if eventLoop == nil {
+		panic("event loop not initialized")
+	}
+
+	// Process one task if available (timers, animation frames, etc.)
+	eventLoop.ProcessNextTask()
 }
 
 // loadPageResources automatically loads and executes scripts found in the DOM,
