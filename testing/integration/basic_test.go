@@ -1,35 +1,14 @@
 package integration
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
-	"time"
 
-	"github.com/dpemmons/DOMulator/internal/browser/fetch"
-	"github.com/dpemmons/DOMulator/internal/browser/resources"
+	domulator "github.com/dpemmons/DOMulator"
 	"github.com/dpemmons/DOMulator/internal/dom"
-	"github.com/dpemmons/DOMulator/internal/js"
-	"github.com/dpemmons/DOMulator/internal/parser"
 )
-
-// runtimeAdapter adapts js.Runtime to resources.JSRuntime interface
-type runtimeAdapter struct {
-	runtime *js.Runtime
-}
-
-func (ra *runtimeAdapter) RunScript(name, code string) (interface{}, error) {
-	result, err := ra.runtime.RunScript(name, code)
-	if err != nil {
-		return nil, err
-	}
-	return result.Export(), nil // Convert goja.Value to interface{}
-}
-
-func (ra *runtimeAdapter) VM() interface{} {
-	return ra.runtime.VM()
-}
 
 func TestBasicDOMManipulation(t *testing.T) {
 	// Create HTTP test server
@@ -68,175 +47,187 @@ document.body.className = 'script-executed';
 	}))
 	defer server.Close()
 
-	// Fetch and parse the HTML document
-	htmlURL := server.URL + "/index.html"
-	resp, err := http.Get(htmlURL)
-	if err != nil {
-		t.Fatalf("Failed to fetch HTML: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// Parse the HTML
-	parser := parser.NewParser()
-	document, err := parser.Parse(resp.Body)
-	if err != nil {
-		t.Fatalf("Failed to parse HTML: %v", err)
-	}
-
-	// Create JavaScript runtime with document
-	runtime := js.New(document)
-	runtimeAdapter := &runtimeAdapter{runtime: runtime}
-
-	// Create fetch API and resource manager
-	fetchAPI := fetch.New(nil) // No network mocks, use real HTTP
-	resourceManager := resources.New(document, fetchAPI, runtimeAdapter)
-
-	// Find all script elements and load them
-	scripts := document.GetElementsByTagName("script")
-	scriptsToLoad := make([]*dom.Element, 0)
-
-	for i := 0; i < scripts.Length(); i++ {
-		script := scripts.Item(i)
-		if script.GetAttribute("src") != "" {
-			scriptsToLoad = append(scriptsToLoad, script)
-		}
-	}
-
-	// Load and execute scripts
-	for _, script := range scriptsToLoad {
-		src := script.GetAttribute("src")
-		if src != "" {
-			// Convert relative URL to absolute and set it on the script element
-			if !strings.HasPrefix(src, "http") {
-				src = server.URL + src
-				script.SetAttribute("src", src)
-			}
-
-			t.Logf("Loading script from: %s", src)
-
-			// Load the script using resource manager
-			err := resourceManager.LoadResource(script)
-			if err != nil {
-				t.Fatalf("Failed to load script: %v", err)
-			}
-
-			// Wait for script to load and execute
-			// Check if there are any active tasks
-			maxWait := time.Second * 5
-			start := time.Now()
-			for resourceManager.IsLoading() {
-				if time.Since(start) > maxWait {
-					t.Fatalf("Script loading timed out")
-				}
-				time.Sleep(10 * time.Millisecond)
-			}
-
-			// Check if any tasks failed
-			tasks := resourceManager.GetActiveTasks()
-			for _, task := range tasks {
-				if task.HasError() {
-					t.Fatalf("Script failed to load: %v", task.Error)
-				}
-				t.Logf("Task state: %s, Content length: %d", task.State, len(task.Content))
-			}
-
-			// Add a small delay to ensure script execution completes
-			time.Sleep(100 * time.Millisecond)
-		}
-	}
-
-	// Debug: Check the DOM structure before verification
-	t.Logf("DOM structure after script execution:")
-	container := document.GetElementById("container")
-	if container != nil {
-		children := container.ChildNodes()
-		t.Logf("Container has %d children", children.Length())
-		for i := 0; i < children.Length(); i++ {
-			child := children.Item(i)
-			t.Logf("  Child %d: type=%d, name=%s", i, int(child.NodeType()), child.NodeName())
-			if child.NodeType() == dom.ElementNode {
-				elem := child.(*dom.Element)
-				t.Logf("    Element: tag=%s, id=%s, text=%s", elem.TagName(), elem.GetAttribute("id"), elem.TextContent())
-			}
-		}
-	}
+	// Use the new DOMulator API - automatic HTML parsing and script loading
+	test := domulator.NewTest(t)
+	test.WithServer(server).Navigate("/index.html")
 
 	// Verify the DOM was modified by JavaScript
 	t.Run("VerifyDOMModifications", func(t *testing.T) {
-		// Check that the new paragraph was added
-		dynamicContent := document.GetElementById("dynamic-content")
-		if dynamicContent == nil {
-			t.Error("Expected element with id 'dynamic-content' was not found")
-			return
-		}
-
-		// Check the text content
-		if dynamicContent.TextContent() != "Added by JavaScript" {
-			t.Errorf("Expected text content 'Added by JavaScript', got '%s'", dynamicContent.TextContent())
-		}
-
-		// Check that it's a child of the container
-		container := document.GetElementById("container")
-		if container == nil {
-			t.Error("Container element not found")
-			return
-		}
-
-		found := false
-		children := container.ChildNodes()
-		for i := 0; i < children.Length(); i++ {
-			child := children.Item(i)
-			if child.NodeType() == dom.ElementNode {
-				element := child.(*dom.Element)
-				if element.GetAttribute("id") == "dynamic-content" {
-					found = true
-					break
-				}
-			}
-		}
-
-		if !found {
-			t.Error("Dynamic content element was not found as child of container")
-		}
+		// Check that the new paragraph was added with the expected content
+		test.AssertElement("#dynamic-content").Exists()
+		test.AssertElement("#dynamic-content").HasText("Added by JavaScript")
 
 		// Check that the body class was added
-		body := document.Body()
-		if body == nil {
-			t.Error("Body element not found")
-			return
-		}
-
-		if body.GetAttribute("class") != "script-executed" {
-			t.Errorf("Expected body class 'script-executed', got '%s'", body.GetAttribute("class"))
-		}
+		test.AssertElement("body").HasClass("script-executed")
 	})
 
 	// Verify the original content is still there
 	t.Run("VerifyOriginalContent", func(t *testing.T) {
-		container := document.GetElementById("container")
-		if container == nil {
-			t.Error("Container element not found")
-			return
-		}
+		// Check that both original and new content exist
+		test.AssertElement("#container").Exists()
+		test.AssertElement("#container p").Count(2) // Should have 2 paragraphs
 
-		// Should have both original and new content
-		paragraphs := container.GetElementsByTagName("p")
-		if paragraphs.Length() != 2 {
-			t.Errorf("Expected 2 paragraphs in container, got %d", paragraphs.Length())
-		}
-
-		// Check original paragraph is still there
-		originalFound := false
-		for i := 0; i < paragraphs.Length(); i++ {
-			p := paragraphs.Item(i)
-			if p.TextContent() == "Original content" {
-				originalFound = true
-				break
-			}
-		}
-
-		if !originalFound {
-			t.Error("Original content paragraph not found")
-		}
+		// Check original paragraph is still there using contains text
+		test.AssertElement("#container").ContainsText("Original content")
 	})
+
+	// Verify the title was set correctly
+	test.AssertElement("title").HasText("Basic Integration Test")
+}
+
+func TestNavigateToAbsoluteURL(t *testing.T) {
+	// Test that absolute URLs work too
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<h1>Direct Navigation</h1>`))
+	}))
+	defer server.Close()
+
+	test := domulator.NewTest(t)
+
+	// Navigate directly to the absolute URL (no WithServer needed)
+	test.Navigate(server.URL)
+
+	test.AssertElement("h1").HasText("Direct Navigation")
+}
+
+func TestInlineScriptExecution(t *testing.T) {
+	// Test that inline scripts are automatically executed
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`
+			<html>
+				<body>
+					<div id="inline-result"></div>
+					<script>
+						document.getElementById('inline-result').textContent = 'Inline script executed!';
+					</script>
+				</body>
+			</html>
+		`))
+	}))
+	defer server.Close()
+
+	test := domulator.NewTest(t)
+	test.WithServer(server).Navigate("/")
+
+	// The inline script should have automatically executed
+	test.AssertElement("#inline-result").HasText("Inline script executed!")
+}
+
+func TestWithHTTPTestServer(t *testing.T) {
+	// Create a test server with HTMX-style behavior
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			w.Header().Set("Content-Type", "text/html")
+			w.Write([]byte(`
+				<html>
+					<head><title>Test App</title></head>
+					<body>
+						<form hx-post="/api/contact" hx-target="#result">
+							<input name="email" type="email" required>
+							<button type="submit">Send</button>
+						</form>
+						<div id="result"></div>
+						<script src="/htmx.js"></script>
+					</body>
+				</html>
+			`))
+		case "/htmx.js":
+			// Serve a mock HTMX implementation that handles basic form submissions
+			w.Header().Set("Content-Type", "application/javascript")
+			w.Write([]byte(`
+				// Mock HTMX implementation for testing
+				(function() {
+					console.log('HTMX script starting...');
+					
+					function handleSubmit(event) {
+						console.log('handleSubmit called, event:', event);
+						event.preventDefault();
+						var form = event.target;
+						console.log('form:', form);
+						var target = form.getAttribute('hx-target');
+						var url = form.getAttribute('hx-post');
+						console.log('target:', target, 'url:', url);
+						
+						if (target && url) {
+							// Simple fetch simulation using basic DOM manipulation
+							var targetElement = document.querySelector(target);
+							console.log('targetElement:', targetElement);
+							if (targetElement) {
+								targetElement.innerHTML = '<div class="success">Message sent!</div>';
+								console.log('Updated target element innerHTML');
+							} else {
+								console.log('Target element not found!');
+							}
+						} else {
+							console.log('Missing target or url attributes');
+						}
+					}
+					
+					// Initialize HTMX-like behavior
+					document.addEventListener('DOMContentLoaded', function() {
+						console.log('DOMContentLoaded fired in HTMX script');
+						var forms = document.querySelectorAll('[hx-post]');
+						console.log('Found', forms.length, 'forms with hx-post');
+						for (var i = 0; i < forms.length; i++) {
+							console.log('Adding submit listener to form', i);
+							forms[i].addEventListener('submit', handleSubmit);
+						}
+					});
+					
+					console.log('HTMX script loaded');
+				})();
+			`))
+		case "/api/contact":
+			// Simulate form submission response
+			w.Write([]byte(`<div class="success">Message sent!</div>`))
+		}
+	}))
+	defer server.Close()
+
+	// Use the new DOMulator API
+	test := domulator.NewTest(t)
+
+	// Navigate to the page - this should automatically load HTML and scripts
+	test.WithServer(server).Navigate("/")
+
+	// Debug: Print the actual HTML that was loaded
+	doc := test.Document()
+	if doc != nil {
+		fmt.Printf("Loaded HTML: %s\n", doc.DocumentElement().OuterHTML())
+
+		// Check if attributes are actually there
+		inputs := doc.QuerySelectorAll("input")
+		fmt.Printf("Found %d input elements\n", inputs.Length())
+		if inputs.Length() > 0 {
+			input := inputs.Item(0).(*dom.Element)
+			fmt.Printf("Input attributes: name='%s', type='%s'\n",
+				input.GetAttribute("name"), input.GetAttribute("type"))
+		}
+	}
+
+	// Verify the page loaded correctly
+	test.AssertElement("title").HasText("Test App")
+	test.AssertElement("form").Exists()
+	test.AssertElement("input[name=email]").Exists()
+	test.AssertElement("#result").Exists()
+
+	// Debug: Test if HTMX script was loaded by checking if the event handler is attached
+	test.ExecuteScript("console.log('Testing HTMX setup...');")
+
+	// Test form interaction
+	test.Type("input[name=email]", "test@example.com")
+
+	// Debug: Let's try triggering the form submit event directly
+	test.Submit("form[hx-post]")
+
+	// Debug: Check what's in the result div after form submission
+	resultDiv := test.Document().QuerySelector("#result")
+	if resultDiv != nil {
+		fmt.Printf("Result div content after submission: '%s'\n", resultDiv.InnerHTML())
+	}
+
+	// This should trigger HTMX behavior and update the result div
+	// Note: This will test both the automatic script loading and HTMX functionality
+	test.AssertElement("#result .success").HasText("Message sent!")
 }
