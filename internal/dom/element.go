@@ -743,82 +743,137 @@ func (e *Element) parseHTMLFragment(html string) []Node {
 		return []Node{NewText(html, e.ownerDocument)}
 	}
 
-	// Basic element parsing - handle simple cases like <div>content</div>
 	var nodes []Node
+	remaining := html
 
-	// Very simple parsing for demonstration - handles basic elements
-	if strings.HasPrefix(html, "<") && strings.HasSuffix(html, ">") {
-		// Check for self-closing tag
-		if strings.HasSuffix(html, "/>") {
-			tagContent := html[1 : len(html)-2]
-			tagParts := strings.Fields(tagContent)
-			if len(tagParts) > 0 {
-				element := NewElement(tagParts[0], e.ownerDocument)
-				// Parse basic attributes
-				for i := 1; i < len(tagParts); i++ {
-					if strings.Contains(tagParts[i], "=") {
-						attrParts := strings.SplitN(tagParts[i], "=", 2)
-						if len(attrParts) == 2 {
-							key := attrParts[0]
-							value := strings.Trim(attrParts[1], `"'`)
-							element.SetAttribute(key, value)
-						}
-					}
-				}
-				nodes = append(nodes, element)
+	for len(remaining) > 0 {
+		// Find the next '<' character
+		ltIndex := strings.Index(remaining, "<")
+		if ltIndex == -1 {
+			// No more tags, rest is text
+			if strings.TrimSpace(remaining) != "" {
+				nodes = append(nodes, NewText(remaining, e.ownerDocument))
 			}
-		} else {
-			// Try to parse opening and closing tags
-			openEnd := strings.Index(html, ">")
-			if openEnd > 0 {
-				openTag := html[1:openEnd]
-				tagParts := strings.Fields(openTag)
-				if len(tagParts) > 0 {
-					tagName := tagParts[0]
-					closeTag := "</" + tagName + ">"
-					closeStart := strings.LastIndex(html, closeTag)
+			break
+		}
 
-					if closeStart > openEnd {
-						element := NewElement(tagName, e.ownerDocument)
-
-						// Parse basic attributes
-						for i := 1; i < len(tagParts); i++ {
-							if strings.Contains(tagParts[i], "=") {
-								attrParts := strings.SplitN(tagParts[i], "=", 2)
-								if len(attrParts) == 2 {
-									key := attrParts[0]
-									value := strings.Trim(attrParts[1], `"'`)
-									element.SetAttribute(key, value)
-								}
-							}
-						}
-
-						// Get content between tags
-						content := html[openEnd+1 : closeStart]
-						if strings.TrimSpace(content) != "" {
-							// Recursively parse content
-							childNodes := e.parseHTMLFragment(content)
-							for _, child := range childNodes {
-								element.AppendChild(child)
-							}
-						}
-
-						nodes = append(nodes, element)
-					}
-				}
+		// Add any text before the tag
+		if ltIndex > 0 {
+			textContent := remaining[:ltIndex]
+			if strings.TrimSpace(textContent) != "" {
+				nodes = append(nodes, NewText(textContent, e.ownerDocument))
 			}
 		}
-	} else {
-		// Fallback: treat as text
-		nodes = append(nodes, NewText(html, e.ownerDocument))
-	}
 
-	if len(nodes) == 0 {
-		// Fallback: create text node
-		nodes = append(nodes, NewText(html, e.ownerDocument))
+		// Parse the tag starting at ltIndex
+		remaining = remaining[ltIndex:]
+
+		// Find the end of the opening tag
+		gtIndex := strings.Index(remaining, ">")
+		if gtIndex == -1 {
+			// Malformed HTML, treat rest as text
+			nodes = append(nodes, NewText(remaining, e.ownerDocument))
+			break
+		}
+
+		// Extract the opening tag
+		openTag := remaining[:gtIndex+1]
+
+		// Check if it's a self-closing tag
+		if strings.HasSuffix(openTag, "/>") {
+			// Self-closing tag
+			element := e.parseOpeningTag(openTag[:len(openTag)-2] + ">")
+			if element != nil {
+				nodes = append(nodes, element)
+			}
+			remaining = remaining[gtIndex+1:]
+			continue
+		}
+
+		// Check if it's a closing tag
+		if strings.HasPrefix(openTag, "</") {
+			// This shouldn't happen in a well-formed fragment, but skip it
+			remaining = remaining[gtIndex+1:]
+			continue
+		}
+
+		// Parse opening tag to get tag name
+		element := e.parseOpeningTag(openTag)
+		if element == nil {
+			// Failed to parse, treat as text
+			nodes = append(nodes, NewText(openTag, e.ownerDocument))
+			remaining = remaining[gtIndex+1:]
+			continue
+		}
+
+		tagName := element.LocalName()
+
+		// Look for the matching closing tag
+		closeTag := "</" + tagName + ">"
+		closeIndex := strings.Index(remaining[gtIndex+1:], closeTag)
+
+		if closeIndex == -1 {
+			// No closing tag found, treat as void element or add as-is
+			nodes = append(nodes, element)
+			remaining = remaining[gtIndex+1:]
+			continue
+		}
+
+		// Extract content between opening and closing tags
+		contentStart := gtIndex + 1
+		contentEnd := contentStart + closeIndex
+		content := remaining[contentStart:contentEnd]
+
+		// Parse content recursively and add as children
+		if strings.TrimSpace(content) != "" {
+			childNodes := e.parseHTMLFragment(content)
+			for _, child := range childNodes {
+				element.AppendChild(child)
+			}
+		}
+
+		nodes = append(nodes, element)
+
+		// Move past the closing tag
+		remaining = remaining[contentEnd+len(closeTag):]
 	}
 
 	return nodes
+}
+
+// parseOpeningTag parses an opening tag and returns the element
+func (e *Element) parseOpeningTag(tagStr string) *Element {
+	// Remove < and >
+	if !strings.HasPrefix(tagStr, "<") || !strings.HasSuffix(tagStr, ">") {
+		return nil
+	}
+
+	content := tagStr[1 : len(tagStr)-1]
+	parts := strings.Fields(content)
+	if len(parts) == 0 {
+		return nil
+	}
+
+	tagName := parts[0]
+	element := NewElement(tagName, e.ownerDocument)
+
+	// Parse attributes
+	for i := 1; i < len(parts); i++ {
+		attr := parts[i]
+		if strings.Contains(attr, "=") {
+			attrParts := strings.SplitN(attr, "=", 2)
+			if len(attrParts) == 2 {
+				key := attrParts[0]
+				value := strings.Trim(attrParts[1], `"'`)
+				element.SetAttribute(key, value)
+			}
+		} else {
+			// Boolean attribute
+			element.SetAttribute(attr, "")
+		}
+	}
+
+	return element
 }
 
 // toJS is a placeholder for JavaScript binding.

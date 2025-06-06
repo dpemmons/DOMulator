@@ -211,8 +211,39 @@ func (db *DOMBindings) WrapElement(element *dom.Element) *goja.Object {
 	elem.Set("tagName", element.TagName())
 
 	// Element content properties (using getters for dynamic updates)
-	elem.Set("innerHTML", element.InnerHTML())
-	elem.Set("outerHTML", element.OuterHTML())
+	elem.DefineAccessorProperty("innerHTML",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			return db.vm.ToValue(element.InnerHTML())
+		}),
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Setter
+			if len(call.Arguments) > 0 {
+				html := call.Arguments[0].String()
+				element.SetInnerHTML(html)
+				// Update navigation properties after setting innerHTML
+				db.updateNodeNavigationProperties(elem, element)
+			}
+			return goja.Undefined()
+		}),
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
+
+	elem.DefineAccessorProperty("outerHTML",
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Getter
+			return db.vm.ToValue(element.OuterHTML())
+		}),
+		db.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			// Setter - outerHTML replacement is complex, for now just update innerHTML
+			if len(call.Arguments) > 0 {
+				html := call.Arguments[0].String()
+				element.SetInnerHTML(html)
+				// Update navigation properties after setting outerHTML
+				db.updateNodeNavigationProperties(elem, element)
+			}
+			return goja.Undefined()
+		}),
+		goja.FLAG_FALSE, goja.FLAG_TRUE) // Not enumerable, configurable
 
 	// Dynamic textContent property - set current value and add setter
 	elem.DefineAccessorProperty("textContent",
@@ -371,32 +402,16 @@ func (db *DOMBindings) WrapElement(element *dom.Element) *goja.Object {
 			panic(db.vm.NewTypeError(err.Error()))
 		}
 
-		// Update cached properties after DOM modification
-		elem.Set("innerHTML", element.InnerHTML())
-		elem.Set("outerHTML", element.OuterHTML())
-		elem.Set("textContent", element.TextContent())
-
-		// Update childNodes if this was afterbegin or beforeend
+		// Update navigation properties for the target element (afterbegin/beforeend affect target's children)
 		if position == "afterbegin" || position == "beforeend" {
-			children := db.vm.NewArray()
-			childNodes := element.ChildNodes().ToSlice()
-			for i, childNode := range childNodes {
-				children.Set(strconv.Itoa(i), db.WrapNode(childNode))
-			}
-			children.Set("length", len(childNodes))
-			elem.Set("childNodes", children)
+			db.updateNodeNavigationProperties(elem, element)
+		}
 
-			// Update navigation properties
-			if element.FirstChild() != nil {
-				elem.Set("firstChild", db.WrapNode(element.FirstChild()))
-			} else {
-				elem.Set("firstChild", goja.Null())
-			}
-
-			if element.LastChild() != nil {
-				elem.Set("lastChild", db.WrapNode(element.LastChild()))
-			} else {
-				elem.Set("lastChild", goja.Null())
+		// Update parent's navigation properties for beforebegin/afterend
+		if (position == "beforebegin" || position == "afterend") && element.ParentNode() != nil {
+			// Find the parent's JavaScript wrapper in cache and update it
+			if parentWrapper, exists := db.nodeCache[element.ParentNode()]; exists {
+				db.updateNodeNavigationProperties(parentWrapper, element.ParentNode())
 			}
 		}
 
@@ -694,6 +709,9 @@ func (db *DOMBindings) addNodeMethods(obj *goja.Object, node dom.Node) {
 			childJS.Set("parentNode", obj)
 		}
 
+		// Update parent's navigation properties
+		db.updateNodeNavigationProperties(obj, node)
+
 		return call.Arguments[0] // Return the appended child (JavaScript wrapper)
 	})
 
@@ -750,15 +768,11 @@ func (db *DOMBindings) addNodeMethods(obj *goja.Object, node dom.Node) {
 
 	// Navigation properties - avoid infinite recursion by setting to null initially
 	obj.Set("parentNode", goja.Null())
-	obj.Set("firstChild", goja.Null())
-	obj.Set("lastChild", goja.Null())
 	obj.Set("nextSibling", goja.Null())
 	obj.Set("previousSibling", goja.Null())
 
-	// Children array - create initial empty array
-	children := db.vm.NewArray()
-	children.Set("length", node.ChildNodes().Length())
-	obj.Set("childNodes", children)
+	// Set up navigation properties properly
+	db.updateNodeNavigationProperties(obj, node)
 }
 
 // addEventMethods adds event handling methods to a JavaScript object
@@ -863,6 +877,34 @@ func (db *DOMBindings) extractNodeFromJS(value goja.Value) dom.Node {
 		}
 	}
 	return nil
+}
+
+// updateNodeNavigationProperties updates a JavaScript object's navigation properties to match the DOM state
+func (db *DOMBindings) updateNodeNavigationProperties(obj *goja.Object, node dom.Node) {
+	// Update childNodes array
+	children := db.vm.NewArray()
+	childNodes := node.ChildNodes().ToSlice()
+	for i, childNode := range childNodes {
+		children.Set(strconv.Itoa(i), db.WrapNode(childNode))
+	}
+	children.Set("length", len(childNodes))
+	obj.Set("childNodes", children)
+
+	// Update navigation properties
+	if node.FirstChild() != nil {
+		obj.Set("firstChild", db.WrapNode(node.FirstChild()))
+	} else {
+		obj.Set("firstChild", goja.Null())
+	}
+
+	if node.LastChild() != nil {
+		obj.Set("lastChild", db.WrapNode(node.LastChild()))
+	} else {
+		obj.Set("lastChild", goja.Null())
+	}
+
+	// Note: parentNode, nextSibling, previousSibling would need additional context
+	// and could cause circular references, so we handle them separately when needed
 }
 
 // getTextContent extracts text content from a DOM node
