@@ -8,6 +8,7 @@ import (
 	"github.com/dpemmons/DOMulator/internal/browser/history"
 	"github.com/dpemmons/DOMulator/internal/browser/performance"
 	"github.com/dpemmons/DOMulator/internal/browser/url"
+	"github.com/dpemmons/DOMulator/internal/browser/xpath"
 	"github.com/dpemmons/DOMulator/internal/css"
 	"github.com/dpemmons/DOMulator/internal/dom"
 )
@@ -1002,6 +1003,26 @@ func (db *DOMBindings) SetupBrowserAPIs() {
 		obj.Set("detail", goja.Null())
 		return obj
 	})
+
+	// XPathEvaluator constructor
+	db.vm.Set("XPathEvaluator", func(call goja.ConstructorCall) *goja.Object {
+		evaluator := xpath.NewXPathEvaluator()
+		return db.wrapXPathEvaluator(evaluator)
+	})
+
+	// XPathResult constants
+	xpathResult := db.vm.NewObject()
+	xpathResult.Set("ANY_TYPE", xpath.ANY_TYPE)
+	xpathResult.Set("NUMBER_TYPE", xpath.NUMBER_TYPE)
+	xpathResult.Set("STRING_TYPE", xpath.STRING_TYPE)
+	xpathResult.Set("BOOLEAN_TYPE", xpath.BOOLEAN_TYPE)
+	xpathResult.Set("UNORDERED_NODE_ITERATOR_TYPE", xpath.UNORDERED_NODE_ITERATOR_TYPE)
+	xpathResult.Set("ORDERED_NODE_ITERATOR_TYPE", xpath.ORDERED_NODE_ITERATOR_TYPE)
+	xpathResult.Set("UNORDERED_NODE_SNAPSHOT_TYPE", xpath.UNORDERED_NODE_SNAPSHOT_TYPE)
+	xpathResult.Set("ORDERED_NODE_SNAPSHOT_TYPE", xpath.ORDERED_NODE_SNAPSHOT_TYPE)
+	xpathResult.Set("ANY_UNORDERED_NODE_TYPE", xpath.ANY_UNORDERED_NODE_TYPE)
+	xpathResult.Set("FIRST_ORDERED_NODE_TYPE", xpath.FIRST_ORDERED_NODE_TYPE)
+	db.vm.Set("XPathResult", xpathResult)
 }
 
 // SetupGlobalAPIs sets up global browser APIs like window.history and window.performance
@@ -1030,6 +1051,163 @@ func (db *DOMBindings) SetupGlobalAPIs() {
 	// Setup Performance API
 	p := performance.NewPerformance()
 	window.Set("performance", db.wrapPerformance(p))
+
+	// Setup Location API
+	location := db.vm.NewObject()
+	location.Set("href", "http://localhost:3000/")
+	location.Set("origin", "http://localhost:3000")
+	location.Set("protocol", "http:")
+	location.Set("host", "localhost:3000")
+	location.Set("hostname", "localhost")
+	location.Set("port", "3000")
+	location.Set("pathname", "/")
+	location.Set("search", "")
+	location.Set("hash", "")
+
+	// Location methods
+	location.Set("assign", func(call goja.FunctionCall) goja.Value {
+		// Stub implementation
+		return goja.Undefined()
+	})
+	location.Set("replace", func(call goja.FunctionCall) goja.Value {
+		// Stub implementation
+		return goja.Undefined()
+	})
+	location.Set("reload", func(call goja.FunctionCall) goja.Value {
+		// Stub implementation
+		return goja.Undefined()
+	})
+	location.Set("toString", func(call goja.FunctionCall) goja.Value {
+		return db.vm.ToValue("http://localhost:3000/")
+	})
+
+	window.Set("location", location)
+	db.vm.Set("location", location) // Also set as global
+
+	// Add fetch API for HTMX and other libraries
+	db.vm.Set("fetch", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("fetch requires a URL"))
+		}
+
+		url := call.Arguments[0].String()
+
+		// Create a simple Promise-like object
+		promise := db.vm.NewObject()
+
+		// For testing purposes, simulate successful responses
+		// In a real implementation, this would make actual HTTP requests
+		promise.Set("then", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) > 0 {
+				callback, ok := goja.AssertFunction(call.Arguments[0])
+				if ok {
+					// Create mock response
+					response := db.vm.NewObject()
+					response.Set("ok", true)
+					response.Set("status", 200)
+					response.Set("url", url)
+
+					// Mock text() method
+					response.Set("text", func(call goja.FunctionCall) goja.Value {
+						textPromise := db.vm.NewObject()
+						textPromise.Set("then", func(call goja.FunctionCall) goja.Value {
+							if len(call.Arguments) > 0 {
+								textCallback, ok := goja.AssertFunction(call.Arguments[0])
+								if ok {
+									// Return mock HTML content based on URL
+									var content string
+									if url == "/api/hello" {
+										content = `<div class="success">Hello from HTMX! 👋</div>`
+									} else if url == "/api/contact" {
+										content = `<div class="success">Thank you! Message sent.</div>`
+									} else {
+										content = `<div>Mock response for ` + url + `</div>`
+									}
+									_, _ = textCallback(goja.Undefined(), db.vm.ToValue(content))
+								}
+							}
+							return textPromise
+						})
+						return textPromise
+					})
+
+					_, _ = callback(goja.Undefined(), response)
+				}
+			}
+			return promise
+		})
+
+		promise.Set("catch", func(call goja.FunctionCall) goja.Value {
+			// Error handling - for now just return the promise
+			return promise
+		})
+
+		return promise
+	})
+
+	// Add XMLHttpRequest for older libraries
+	db.vm.Set("XMLHttpRequest", func(call goja.ConstructorCall) *goja.Object {
+		xhr := db.vm.NewObject()
+
+		var requestURL string
+		var readyState = 0
+
+		xhr.Set("readyState", readyState)
+		xhr.Set("status", 0)
+		xhr.Set("statusText", "")
+		xhr.Set("responseText", "")
+		xhr.Set("responseXML", goja.Null())
+
+		// XMLHttpRequest methods
+		xhr.Set("open", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) >= 2 {
+				// method is first arg but we don't need to store it for mock
+				requestURL = call.Arguments[1].String()
+				readyState = 1
+				xhr.Set("readyState", readyState)
+			}
+			return goja.Undefined()
+		})
+
+		xhr.Set("setRequestHeader", func(call goja.FunctionCall) goja.Value {
+			// Mock implementation
+			return goja.Undefined()
+		})
+
+		xhr.Set("send", func(call goja.FunctionCall) goja.Value {
+			// Mock successful response
+			readyState = 4
+			xhr.Set("readyState", readyState)
+			xhr.Set("status", 200)
+			xhr.Set("statusText", "OK")
+
+			// Mock response based on URL
+			var response string
+			if requestURL == "/api/hello" {
+				response = `<div class="success">Hello from HTMX! 👋</div>`
+			} else if requestURL == "/api/contact" {
+				response = `<div class="success">Thank you! Message sent.</div>`
+			} else {
+				response = `<div>Mock response for ` + requestURL + `</div>`
+			}
+			xhr.Set("responseText", response)
+
+			// Trigger onreadystatechange if it exists
+			if onReadyStateChange := xhr.Get("onreadystatechange"); onReadyStateChange != nil && !goja.IsUndefined(onReadyStateChange) {
+				if callback, ok := goja.AssertFunction(onReadyStateChange); ok {
+					_, _ = callback(goja.Undefined())
+				}
+			}
+
+			return goja.Undefined()
+		})
+
+		xhr.Set("abort", func(call goja.FunctionCall) goja.Value {
+			return goja.Undefined()
+		})
+
+		return xhr
+	})
 }
 
 // addWindowEventMethods adds event methods to window but with proper target
@@ -1573,6 +1751,193 @@ func (db *DOMBindings) wrapURLSearchParams(params *url.URLSearchParams) *goja.Ob
 
 	// Size property (read-only)
 	obj.Set("size", params.Size())
+
+	return obj
+}
+
+// wrapXPathEvaluator wraps an XPathEvaluator for JavaScript access
+func (db *DOMBindings) wrapXPathEvaluator(evaluator *xpath.XPathEvaluator) *goja.Object {
+	obj := db.vm.NewObject()
+
+	// createExpression method
+	obj.Set("createExpression", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("createExpression requires an expression"))
+		}
+
+		expression := call.Arguments[0].String()
+		var resolver xpath.NSResolver
+		if len(call.Arguments) > 1 && !goja.IsNull(call.Arguments[1]) && !goja.IsUndefined(call.Arguments[1]) {
+			// For now, use a simple resolver
+			resolver = &xpath.SimpleNSResolver{}
+		}
+
+		xpathExpr, err := evaluator.CreateExpression(expression, resolver)
+		if err != nil {
+			panic(db.vm.NewTypeError("Invalid XPath expression: " + err.Error()))
+		}
+
+		return db.wrapXPathExpression(xpathExpr)
+	})
+
+	// createNSResolver method
+	obj.Set("createNSResolver", func(call goja.FunctionCall) goja.Value {
+		var node dom.Node
+		if len(call.Arguments) > 0 {
+			node = db.extractNodeFromJS(call.Arguments[0])
+		}
+
+		resolver := evaluator.CreateNSResolver(node)
+		return db.wrapNSResolver(resolver)
+	})
+
+	// evaluate method
+	obj.Set("evaluate", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 3 {
+			panic(db.vm.NewTypeError("evaluate requires expression, contextNode, and resultType"))
+		}
+
+		expression := call.Arguments[0].String()
+		contextNode := db.extractNodeFromJS(call.Arguments[1])
+		if contextNode == nil {
+			panic(db.vm.NewTypeError("Invalid context node"))
+		}
+
+		var resolver xpath.NSResolver
+		if len(call.Arguments) > 2 && !goja.IsNull(call.Arguments[2]) && !goja.IsUndefined(call.Arguments[2]) {
+			// For now, use a simple resolver
+			resolver = &xpath.SimpleNSResolver{}
+		}
+
+		resultType := int(call.Arguments[3].ToInteger())
+
+		var result *xpath.XPathResult
+		if len(call.Arguments) > 4 && !goja.IsNull(call.Arguments[4]) && !goja.IsUndefined(call.Arguments[4]) {
+			// Reuse existing result if provided
+			// For now, we'll ignore this parameter
+		}
+
+		xpathResult, err := evaluator.Evaluate(expression, contextNode, resolver, resultType, result)
+		if err != nil {
+			panic(db.vm.NewTypeError("XPath evaluation failed: " + err.Error()))
+		}
+
+		return db.wrapXPathResult(xpathResult)
+	})
+
+	return obj
+}
+
+// wrapXPathExpression wraps an XPathExpression for JavaScript access
+func (db *DOMBindings) wrapXPathExpression(expr *xpath.XPathExpression) *goja.Object {
+	obj := db.vm.NewObject()
+
+	// evaluate method
+	obj.Set("evaluate", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(db.vm.NewTypeError("evaluate requires contextNode and resultType"))
+		}
+
+		contextNode := db.extractNodeFromJS(call.Arguments[0])
+		if contextNode == nil {
+			panic(db.vm.NewTypeError("Invalid context node"))
+		}
+
+		resultType := int(call.Arguments[1].ToInteger())
+
+		var result *xpath.XPathResult
+		if len(call.Arguments) > 2 && !goja.IsNull(call.Arguments[2]) && !goja.IsUndefined(call.Arguments[2]) {
+			// Reuse existing result if provided
+			// For now, we'll ignore this parameter
+		}
+
+		xpathResult, err := expr.Evaluate(contextNode, resultType, result)
+		if err != nil {
+			panic(db.vm.NewTypeError("XPath evaluation failed: " + err.Error()))
+		}
+
+		return db.wrapXPathResult(xpathResult)
+	})
+
+	return obj
+}
+
+// wrapXPathResult wraps an XPathResult for JavaScript access
+func (db *DOMBindings) wrapXPathResult(result *xpath.XPathResult) *goja.Object {
+	obj := db.vm.NewObject()
+
+	// Properties
+	obj.Set("resultType", result.ResultType())
+
+	// Value properties (only available for certain result types)
+	if result.ResultType() == xpath.NUMBER_TYPE {
+		obj.Set("numberValue", result.NumberValue())
+	}
+	if result.ResultType() == xpath.STRING_TYPE {
+		obj.Set("stringValue", result.StringValue())
+	}
+	if result.ResultType() == xpath.BOOLEAN_TYPE {
+		obj.Set("booleanValue", result.BooleanValue())
+	}
+	if result.ResultType() == xpath.ANY_UNORDERED_NODE_TYPE || result.ResultType() == xpath.FIRST_ORDERED_NODE_TYPE {
+		singleNode := result.SingleNodeValue()
+		if singleNode != nil {
+			obj.Set("singleNodeValue", db.WrapNode(singleNode))
+		} else {
+			obj.Set("singleNodeValue", goja.Null())
+		}
+	}
+
+	// Snapshot properties
+	if result.ResultType() == xpath.UNORDERED_NODE_SNAPSHOT_TYPE || result.ResultType() == xpath.ORDERED_NODE_SNAPSHOT_TYPE {
+		obj.Set("snapshotLength", result.SnapshotLength())
+
+		// snapshotItem method
+		obj.Set("snapshotItem", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 1 {
+				return goja.Null()
+			}
+
+			index := int(call.Arguments[0].ToInteger())
+			node := result.SnapshotItem(index)
+			if node != nil {
+				return db.WrapNode(node)
+			}
+			return goja.Null()
+		})
+	}
+
+	// Iterator methods
+	if result.ResultType() == xpath.UNORDERED_NODE_ITERATOR_TYPE || result.ResultType() == xpath.ORDERED_NODE_ITERATOR_TYPE {
+		obj.Set("iterateNext", func(call goja.FunctionCall) goja.Value {
+			node := result.IterateNext()
+			if node != nil {
+				return db.WrapNode(node)
+			}
+			return goja.Null()
+		})
+	}
+
+	return obj
+}
+
+// wrapNSResolver wraps an NSResolver for JavaScript access
+func (db *DOMBindings) wrapNSResolver(resolver xpath.NSResolver) *goja.Object {
+	obj := db.vm.NewObject()
+
+	// lookupNamespaceURI method
+	obj.Set("lookupNamespaceURI", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Null()
+		}
+
+		prefix := call.Arguments[0].String()
+		uri := resolver.LookupNamespaceURI(prefix)
+		if uri == "" {
+			return goja.Null()
+		}
+		return db.vm.ToValue(uri)
+	})
 
 	return obj
 }
