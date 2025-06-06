@@ -176,6 +176,236 @@ func (test *Test) TriggerEvent(selector, eventType string) *Test {
 	return test
 }
 
+// LoadHTML loads HTML content directly into the browser without making an HTTP request.
+func (test *Test) LoadHTML(html string) *Test {
+	test.harness.LoadHTML(html)
+	return test
+}
+
+// ===== KEYBOARD EVENTS =====
+
+// KeyDown simulates a keydown event.
+func (test *Test) KeyDown(selector, key string) *Test {
+	test.harness.KeyDown(selector, key)
+	return test
+}
+
+// KeyUp simulates a keyup event.
+func (test *Test) KeyUp(selector, key string) *Test {
+	test.harness.KeyUp(selector, key)
+	return test
+}
+
+// KeyPress simulates a keypress event (deprecated but still used).
+func (test *Test) KeyPress(selector, key string) *Test {
+	test.harness.KeyPress(selector, key)
+	return test
+}
+
+// ===== ADVANCED MOUSE EVENTS =====
+
+// MouseDown simulates a mousedown event.
+func (test *Test) MouseDown(selector string) *Test {
+	test.harness.MouseDown(selector)
+	return test
+}
+
+// MouseUp simulates a mouseup event.
+func (test *Test) MouseUp(selector string) *Test {
+	test.harness.MouseUp(selector)
+	return test
+}
+
+// MouseMove simulates a mousemove event.
+func (test *Test) MouseMove(selector string) *Test {
+	test.harness.MouseMove(selector)
+	return test
+}
+
+// RightClick simulates a right-click (contextmenu event).
+func (test *Test) RightClick(selector string) *Test {
+	test.harness.RightClick(selector)
+	return test
+}
+
+// ===== TOUCH EVENTS =====
+
+// TouchStart simulates a touchstart event.
+func (test *Test) TouchStart(selector string) *Test {
+	test.harness.TouchStart(selector)
+	return test
+}
+
+// TouchMove simulates a touchmove event.
+func (test *Test) TouchMove(selector string) *Test {
+	test.harness.TouchMove(selector)
+	return test
+}
+
+// TouchEnd simulates a touchend event.
+func (test *Test) TouchEnd(selector string) *Test {
+	test.harness.TouchEnd(selector)
+	return test
+}
+
+// ===== DRAG AND DROP EVENTS =====
+
+// DragStart simulates a dragstart event.
+func (test *Test) DragStart(selector string) *Test {
+	test.harness.DragStart(selector)
+	return test
+}
+
+// Drag simulates a drag event.
+func (test *Test) Drag(selector string) *Test {
+	test.harness.Drag(selector)
+	return test
+}
+
+// DragEnd simulates a dragend event.
+func (test *Test) DragEnd(selector string) *Test {
+	test.harness.DragEnd(selector)
+	return test
+}
+
+// DragOver simulates a dragover event.
+func (test *Test) DragOver(selector string) *Test {
+	test.harness.DragOver(selector)
+	return test
+}
+
+// DragEnter simulates a dragenter event.
+func (test *Test) DragEnter(selector string) *Test {
+	test.harness.DragEnter(selector)
+	return test
+}
+
+// DragLeave simulates a dragleave event.
+func (test *Test) DragLeave(selector string) *Test {
+	test.harness.DragLeave(selector)
+	return test
+}
+
+// Drop simulates a drop event.
+func (test *Test) Drop(selector string) *Test {
+	test.harness.Drop(selector)
+	return test
+}
+
+// ===== FORM EVENTS =====
+
+// Reset simulates a reset event on a form.
+func (test *Test) Reset(selector string) *Test {
+	test.harness.Reset(selector)
+	return test
+}
+
+// Invalid simulates an invalid event (form validation).
+func (test *Test) Invalid(selector string) *Test {
+	test.harness.Invalid(selector)
+	return test
+}
+
+// ===== SCROLL EVENTS =====
+
+// Scroll simulates a scroll event.
+func (test *Test) Scroll(selector string) *Test {
+	test.harness.Scroll(selector)
+	return test
+}
+
+// ===== MEDIA EVENTS =====
+
+// Play simulates a play event on media elements.
+func (test *Test) Play(selector string) *Test {
+	test.harness.Play(selector)
+	return test
+}
+
+// Pause simulates a pause event on media elements.
+func (test *Test) Pause(selector string) *Test {
+	test.harness.Pause(selector)
+	return test
+}
+
+// Ended simulates an ended event on media elements.
+func (test *Test) Ended(selector string) *Test {
+	test.harness.Ended(selector)
+	return test
+}
+
+// ===== CLIPBOARD EVENTS =====
+
+// Copy simulates a copy event.
+func (test *Test) Copy(selector string) *Test {
+	test.harness.Copy(selector)
+	return test
+}
+
+// Cut simulates a cut event.
+func (test *Test) Cut(selector string) *Test {
+	test.harness.Cut(selector)
+	return test
+}
+
+// Paste simulates a paste event.
+func (test *Test) Paste(selector string) *Test {
+	test.harness.Paste(selector)
+	return test
+}
+
+// ===== WINDOW EVENTS =====
+
+// Resize simulates a resize event on the window/document.
+func (test *Test) Resize() *Test {
+	test.harness.Resize()
+	return test
+}
+
+// Load simulates a load event on the window/document.
+func (test *Test) Load() *Test {
+	test.harness.Load()
+	return test
+}
+
+// Unload simulates an unload event on the window/document.
+func (test *Test) Unload() *Test {
+	test.harness.Unload()
+	return test
+}
+
+// ===== ADVANCED INTERACTION HELPERS =====
+
+// DragAndDrop performs a complete drag and drop operation from source to target.
+func (test *Test) DragAndDrop(sourceSelector, targetSelector string) *Test {
+	test.harness.DragAndDrop(sourceSelector, targetSelector)
+	return test
+}
+
+// Tap simulates a mobile tap (touchstart + touchend).
+func (test *Test) Tap(selector string) *Test {
+	test.harness.Tap(selector)
+	return test
+}
+
+// SwipeLeft simulates a left swipe gesture.
+func (test *Test) SwipeLeft(selector string) *Test {
+	test.harness.SwipeLeft(selector)
+	return test
+}
+
+// SwipeRight simulates a right swipe gesture.
+func (test *Test) SwipeRight(selector string) *Test {
+	test.harness.SwipeRight(selector)
+	return test
+}
+
+// LongPress simulates a long press gesture (extended touch).
+func (test *Test) LongPress(selector string) *Test {
+	test.harness.LongPress(selector)
+	return test
+}
+
 // Assertion Methods - These methods provide fluent assertions about the DOM state
 
 // AssertElement creates an element assertion for the given CSS selector.

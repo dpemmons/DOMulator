@@ -97,8 +97,27 @@ func (h *TestHarness) Navigate(url string) *TestHarness {
 		panic(fmt.Sprintf("Failed to navigate to %s: %v", fullURL, response.Error))
 	}
 
-	// Load HTML and automatically load resources
-	h.LoadHTML(response.Body)
+	// Load HTML directly without executing scripts yet (LoadHTML would execute them)
+	// Parse HTML into DOM using the parser
+	parser := htmlparser.NewParser()
+	document, err := parser.Parse(strings.NewReader(response.Body))
+	if err != nil {
+		panic(fmt.Sprintf("Failed to parse HTML: %v", err))
+	}
+
+	// Create JavaScript runtime with DOM integration
+	runtime := js.New(document)
+
+	// Store in domulator wrapper
+	h.domulator = &DOMulator{
+		document: document,
+		runtime:  runtime,
+	}
+
+	// Set initial document readyState to "loading"
+	document.SetReadyState("loading")
+
+	// Now load and execute scripts with the proper base URL for external scripts
 	h.loadPageResources(fullURL)
 
 	// Fire window.load event after all resources are loaded
@@ -139,6 +158,12 @@ func (h *TestHarness) LoadHTML(html string) *TestHarness {
 
 	// Set initial document readyState to "loading"
 	document.SetReadyState("loading")
+
+	// Execute scripts just like Navigate() does
+	h.loadPageResources("")
+
+	// Fire window.load event after all resources are loaded
+	h.domulator.document.FireWindowLoad()
 
 	return h
 }

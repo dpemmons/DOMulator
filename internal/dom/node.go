@@ -161,10 +161,13 @@ func (n *nodeImpl) DispatchEvent(event Event) bool {
 		curr = curr.ParentNode()
 	}
 
-	// 2. Capturing Phase (from parent to target)
+	// 2. Capturing Phase (from parent to target, excluding target)
 	baseEvent.SetEventPhase(CAPTURING_PHASE)
 	for i := len(path) - 1; i >= 0; i-- {
 		node := path[i]
+		if node == n.self { // Stop capturing phase before target
+			break
+		}
 		baseEvent.SetCurrentTarget(node)
 		// Access event listeners through the interface to handle different node types
 		if nodeWithListeners, ok := node.(interface {
@@ -178,9 +181,6 @@ func (n *nodeImpl) DispatchEvent(event Event) bool {
 					}
 				}
 			}
-		}
-		if node == n.self { // Stop capturing phase at target
-			break
 		}
 	}
 

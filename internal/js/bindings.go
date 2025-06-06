@@ -18,6 +18,8 @@ type DOMBindings struct {
 	document      *dom.Document
 	nodeCache     map[dom.Node]*goja.Object // Cache to maintain object identity
 	cookieManager *cookies.CookieManager
+	jsListeners   map[dom.Node]map[string][]*goja.Object // Store JS listeners for lookup
+	windowTarget  *WindowEventTarget                     // Window event target for proper bubbling
 }
 
 // NewDOMBindings creates a new DOM bindings instance
@@ -30,7 +32,55 @@ func NewDOMBindings(vm *goja.Runtime, document *dom.Document) *DOMBindings {
 		document:      document,
 		nodeCache:     make(map[dom.Node]*goja.Object),
 		cookieManager: cookieManager,
+		jsListeners:   make(map[dom.Node]map[string][]*goja.Object),
+		windowTarget:  &WindowEventTarget{eventListeners: make(map[string][]func(dom.Event))},
 	}
+}
+
+// storeJSListener stores a JavaScript listener for later lookup
+func (db *DOMBindings) storeJSListener(node dom.Node, eventType string, listener *goja.Object) {
+	if db.jsListeners[node] == nil {
+		db.jsListeners[node] = make(map[string][]*goja.Object)
+	}
+	db.jsListeners[node][eventType] = append(db.jsListeners[node][eventType], listener)
+}
+
+// storeWindowJSListener stores a JavaScript listener for window events
+func (db *DOMBindings) storeWindowJSListener(eventType string, listener *goja.Object) {
+	// For window events, we'll store them separately or skip storage
+	// since WindowEventTarget doesn't implement dom.Node
+}
+
+// dispatchEventWithBubbling dispatches an event with proper bubbling to window
+func (db *DOMBindings) dispatchEventWithBubbling(node dom.Node, event dom.Event) bool {
+	// Set the target
+	if baseEvent, ok := event.(*dom.BaseEvent); ok {
+		baseEvent.SetTarget(node)
+	}
+
+	// First dispatch through normal DOM bubbling
+	result := node.DispatchEvent(event)
+
+	// For events that should reach window, also dispatch to window target
+	if event.Bubbles() && db.windowTarget != nil {
+		// Window-specific events or events that bubble to window
+		if isWindowEvent(event.Type()) {
+			db.windowTarget.DispatchEvent(event)
+		}
+	}
+
+	return result
+}
+
+// isWindowEvent checks if an event type should reach the window
+func isWindowEvent(eventType string) bool {
+	windowEvents := map[string]bool{
+		"resize": true, "load": true, "unload": true, "beforeunload": true,
+		"hashchange": true, "online": true, "offline": true, "scroll": true,
+		// These can bubble to window
+		"click": true, "keydown": true, "keyup": true, "mousemove": true,
+	}
+	return windowEvents[eventType]
 }
 
 // WrapDocument wraps a DOM document for JavaScript access
@@ -483,6 +533,661 @@ func (db *DOMBindings) WrapNode(node dom.Node) *goja.Object {
 	return obj
 }
 
+// addNodeMethods adds common DOM node methods to a JavaScript object
+func (db *DOMBindings) addNodeMethods(obj *goja.Object, node dom.Node) {
+	obj.Set("appendChild", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("appendChild requires a child node"))
+		}
+
+		// Extract the DOM node from the JavaScript object
+		childArg := call.Arguments[0]
+		child := db.extractNodeFromJS(childArg)
+		if child == nil {
+			panic(db.vm.NewTypeError("Invalid node"))
+		}
+
+		// Perform the actual DOM appendChild operation
+		node.AppendChild(child)
+
+		// Update the child's parentNode property
+		childJS := call.Arguments[0].ToObject(db.vm)
+		if childJS != nil {
+			childJS.Set("parentNode", obj)
+		}
+
+		// Update parent's navigation properties
+		db.updateNodeNavigationProperties(obj, node)
+
+		return call.Arguments[0] // Return the appended child (JavaScript wrapper)
+	})
+
+	obj.Set("removeChild", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("removeChild requires a child node"))
+		}
+
+		// Simplified implementation - remove first child
+		if node.FirstChild() != nil {
+			node.RemoveChild(node.FirstChild())
+		}
+		return call.Arguments[0] // Return the removed child
+	})
+
+	obj.Set("insertBefore", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(db.vm.NewTypeError("insertBefore requires newChild and referenceChild"))
+		}
+
+		// Simplified implementation
+		childText := call.Arguments[0].String()
+		textNode := db.document.CreateTextNode(childText)
+		node.InsertBefore(textNode, node.FirstChild())
+		return call.Arguments[0] // Return the inserted child
+	})
+
+	obj.Set("replaceChild", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(db.vm.NewTypeError("replaceChild requires newChild and oldChild"))
+		}
+
+		// Simplified implementation
+		if node.FirstChild() != nil {
+			childText := call.Arguments[0].String()
+			textNode := db.document.CreateTextNode(childText)
+			node.ReplaceChild(textNode, node.FirstChild())
+		}
+		return call.Arguments[1] // Return the replaced child
+	})
+
+	obj.Set("cloneNode", func(call goja.FunctionCall) goja.Value {
+		deep := false
+		if len(call.Arguments) > 0 && call.Arguments[0].ToBoolean() {
+			deep = true
+		}
+
+		cloned := node.CloneNode(deep)
+
+		// WrapNode automatically handles Element detection and should call WrapElement
+		// if the cloned node is actually an Element
+		return db.WrapNode(cloned)
+	})
+
+	// Navigation properties - avoid infinite recursion by setting to null initially
+	obj.Set("parentNode", goja.Null())
+	obj.Set("nextSibling", goja.Null())
+	obj.Set("previousSibling", goja.Null())
+
+	// Set up navigation properties properly
+	db.updateNodeNavigationProperties(obj, node)
+}
+
+// addEventMethods adds event handling methods to a JavaScript object
+func (db *DOMBindings) addEventMethods(obj *goja.Object, node dom.Node) {
+	obj.Set("addEventListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(db.vm.NewTypeError("addEventListener requires type and listener"))
+		}
+
+		eventType := call.Arguments[0].String()
+		listener, ok := goja.AssertFunction(call.Arguments[1])
+		if !ok {
+			panic(db.vm.NewTypeError("Listener must be a function"))
+		}
+
+		// Store the JavaScript listener for later lookup
+		db.storeJSListener(node, eventType, db.vm.ToValue(listener).ToObject(db.vm))
+
+		// Wrap the JavaScript function for Go DOM events
+		wrapper := func(event dom.Event) {
+			jsEvent := db.WrapEvent(event)
+			_, _ = listener(goja.Undefined(), jsEvent)
+		}
+
+		node.AddEventListener(eventType, wrapper)
+		return goja.Undefined()
+	})
+
+	obj.Set("removeEventListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(db.vm.NewTypeError("removeEventListener requires type and listener"))
+		}
+
+		// For now, we'll implement a simple version
+		// In a full implementation, we'd need to track the wrapper functions
+		eventType := call.Arguments[0].String()
+		node.RemoveEventListener(eventType, nil) // Remove all listeners of this type
+		return goja.Undefined()
+	})
+
+	obj.Set("dispatchEvent", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("dispatchEvent requires an event"))
+		}
+
+		// Get event details from JavaScript event
+		jsEvent := call.Arguments[0].ToObject(db.vm)
+		if jsEvent == nil {
+			panic(db.vm.NewTypeError("Event argument must be an object"))
+		}
+
+		eventType := ""
+		if typeVal := jsEvent.Get("type"); typeVal != nil {
+			eventType = typeVal.String()
+		}
+		if eventType == "" {
+			panic(db.vm.NewTypeError("Event must have a type"))
+		}
+
+		// Dispatch through Go DOM system (which will call JS listeners via wrappers)
+		bubbles := true
+		cancelable := true
+		if bubblesVal := jsEvent.Get("bubbles"); bubblesVal != nil {
+			bubbles = bubblesVal.ToBoolean()
+		}
+		if cancelableVal := jsEvent.Get("cancelable"); cancelableVal != nil {
+			cancelable = cancelableVal.ToBoolean()
+		}
+
+		goEvent := dom.NewEvent(eventType, bubbles, cancelable)
+		goResult := db.dispatchEventWithBubbling(node, goEvent)
+
+		return db.vm.ToValue(goResult)
+	})
+}
+
+// WrapEvent wraps a DOM event for JavaScript access
+func (db *DOMBindings) WrapEvent(event dom.Event) *goja.Object {
+	evt := db.vm.NewObject()
+
+	evt.Set("type", event.Type())
+
+	// Ensure target and currentTarget are properly wrapped
+	target := event.Target()
+	if target != nil {
+		evt.Set("target", db.WrapNode(target))
+	} else {
+		evt.Set("target", goja.Null())
+	}
+
+	currentTarget := event.CurrentTarget()
+	if currentTarget != nil {
+		evt.Set("currentTarget", db.WrapNode(currentTarget))
+	} else {
+		evt.Set("currentTarget", goja.Null())
+	}
+
+	evt.Set("bubbles", event.Bubbles())
+	evt.Set("cancelable", event.Cancelable())
+	evt.Set("defaultPrevented", event.DefaultPrevented())
+
+	evt.Set("preventDefault", func(call goja.FunctionCall) goja.Value {
+		event.PreventDefault()
+		return goja.Undefined()
+	})
+
+	evt.Set("stopPropagation", func(call goja.FunctionCall) goja.Value {
+		event.StopPropagation()
+		return goja.Undefined()
+	})
+
+	evt.Set("stopImmediatePropagation", func(call goja.FunctionCall) goja.Value {
+		event.StopImmediatePropagation()
+		return goja.Undefined()
+	})
+
+	return evt
+}
+
+// extractNode extracts a Go DOM node from a JavaScript value
+func (db *DOMBindings) extractNode(value goja.Value) dom.Node {
+	// This is a simplified implementation
+	// In a real implementation, we'd need to maintain a mapping
+	// between JavaScript wrappers and Go objects
+	// For now, return nil and let the caller handle it
+	return nil
+}
+
+// extractNodeFromJS extracts a Go DOM node from a JavaScript value
+func (db *DOMBindings) extractNodeFromJS(value goja.Value) dom.Node {
+	// Check if this is a JavaScript object with a __domNode property
+	if obj := value.ToObject(db.vm); obj != nil {
+		if domNodeValue := obj.Get("__domNode"); domNodeValue != nil && !goja.IsUndefined(domNodeValue) {
+			// Extract the stored DOM node
+			if exported := domNodeValue.Export(); exported != nil {
+				if node, ok := exported.(dom.Node); ok {
+					return node
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// updateNodeNavigationProperties updates a JavaScript object's navigation properties to match the DOM state
+func (db *DOMBindings) updateNodeNavigationProperties(obj *goja.Object, node dom.Node) {
+	// Update childNodes array
+	children := db.vm.NewArray()
+	childNodes := node.ChildNodes().ToSlice()
+	for i, childNode := range childNodes {
+		children.Set(strconv.Itoa(i), db.WrapNode(childNode))
+	}
+	children.Set("length", len(childNodes))
+	obj.Set("childNodes", children)
+
+	// Update navigation properties
+	if node.FirstChild() != nil {
+		obj.Set("firstChild", db.WrapNode(node.FirstChild()))
+	} else {
+		obj.Set("firstChild", goja.Null())
+	}
+
+	if node.LastChild() != nil {
+		obj.Set("lastChild", db.WrapNode(node.LastChild()))
+	} else {
+		obj.Set("lastChild", goja.Null())
+	}
+
+	// Note: parentNode, nextSibling, previousSibling would need additional context
+	// and could cause circular references, so we handle them separately when needed
+}
+
+// getTextContent extracts text content from a DOM node
+func (db *DOMBindings) getTextContent(node dom.Node) string {
+	switch n := node.(type) {
+	case *dom.Element:
+		return n.TextContent()
+	case *dom.Text:
+		return n.NodeValue()
+	case *dom.Comment:
+		return ""
+	default:
+		// For other node types, try to get node value
+		return node.NodeValue()
+	}
+}
+
+// extractEvent extracts a Go DOM event from a JavaScript value
+func (db *DOMBindings) extractEvent(value goja.Value) dom.Event {
+	// Similar to extractNode, this would need proper implementation
+	// For now, return nil
+	return nil
+}
+
+// WrapNodeList wraps a slice of elements as a JavaScript array-like object
+func (db *DOMBindings) WrapNodeList(elements []*dom.Element) *goja.Object {
+	arr := db.vm.NewArray()
+
+	for i, element := range elements {
+		arr.Set(strconv.Itoa(i), db.WrapElement(element))
+	}
+
+	arr.Set("length", len(elements))
+
+	return arr
+}
+
+// SetupBrowserAPIs sets up browser APIs like CustomEvent, URL, URLSearchParams, History, and Performance
+func (db *DOMBindings) SetupBrowserAPIs() {
+	// DOMException constructor
+	db.vm.Set("DOMException", func(call goja.ConstructorCall) *goja.Object {
+		message := ""
+		name := "Error"
+
+		if len(call.Arguments) > 0 && !goja.IsUndefined(call.Arguments[0]) {
+			message = call.Arguments[0].String()
+		}
+		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Arguments[1]) {
+			name = call.Arguments[1].String()
+		}
+
+		exc := dom.NewDOMException(message, name)
+		return db.wrapDOMException(exc)
+	})
+
+	// Add DOMException constants to the constructor
+	domExceptionConstructor := db.vm.Get("DOMException").(*goja.Object)
+	domExceptionConstructor.Set("INDEX_SIZE_ERR", dom.INDEX_SIZE_ERR)
+	domExceptionConstructor.Set("DOMSTRING_SIZE_ERR", dom.DOMSTRING_SIZE_ERR)
+	domExceptionConstructor.Set("HIERARCHY_REQUEST_ERR", dom.HIERARCHY_REQUEST_ERR)
+	domExceptionConstructor.Set("WRONG_DOCUMENT_ERR", dom.WRONG_DOCUMENT_ERR)
+	domExceptionConstructor.Set("INVALID_CHARACTER_ERR", dom.INVALID_CHARACTER_ERR)
+	domExceptionConstructor.Set("NO_DATA_ALLOWED_ERR", dom.NO_DATA_ALLOWED_ERR)
+	domExceptionConstructor.Set("NO_MODIFICATION_ALLOWED_ERR", dom.NO_MODIFICATION_ALLOWED_ERR)
+	domExceptionConstructor.Set("NOT_FOUND_ERR", dom.NOT_FOUND_ERR)
+	domExceptionConstructor.Set("NOT_SUPPORTED_ERR", dom.NOT_SUPPORTED_ERR)
+	domExceptionConstructor.Set("INUSE_ATTRIBUTE_ERR", dom.INUSE_ATTRIBUTE_ERR)
+	domExceptionConstructor.Set("INVALID_STATE_ERR", dom.INVALID_STATE_ERR)
+	domExceptionConstructor.Set("SYNTAX_ERR", dom.SYNTAX_ERR)
+	domExceptionConstructor.Set("INVALID_MODIFICATION_ERR", dom.INVALID_MODIFICATION_ERR)
+	domExceptionConstructor.Set("NAMESPACE_ERR", dom.NAMESPACE_ERR)
+	domExceptionConstructor.Set("INVALID_ACCESS_ERR", dom.INVALID_ACCESS_ERR)
+	domExceptionConstructor.Set("VALIDATION_ERR", dom.VALIDATION_ERR)
+	domExceptionConstructor.Set("TYPE_MISMATCH_ERR", dom.TYPE_MISMATCH_ERR)
+	domExceptionConstructor.Set("SECURITY_ERR", dom.SECURITY_ERR)
+	domExceptionConstructor.Set("NETWORK_ERR", dom.NETWORK_ERR)
+	domExceptionConstructor.Set("ABORT_ERR", dom.ABORT_ERR)
+	domExceptionConstructor.Set("URL_MISMATCH_ERR", dom.URL_MISMATCH_ERR)
+	domExceptionConstructor.Set("QUOTA_EXCEEDED_ERR", dom.QUOTA_EXCEEDED_ERR)
+	domExceptionConstructor.Set("TIMEOUT_ERR", dom.TIMEOUT_ERR)
+	domExceptionConstructor.Set("INVALID_NODE_TYPE_ERR", dom.INVALID_NODE_TYPE_ERR)
+	domExceptionConstructor.Set("DATA_CLONE_ERR", dom.DATA_CLONE_ERR)
+
+	// URL constructor
+	db.vm.Set("URL", func(call goja.ConstructorCall) *goja.Object {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("URL constructor requires a URL string"))
+		}
+
+		urlStr := call.Arguments[0].String()
+		var base string
+		if len(call.Arguments) > 1 {
+			base = call.Arguments[1].String()
+		}
+
+		var goURL *url.URL
+		var err error
+		if base != "" {
+			goURL, err = url.NewURL(urlStr, base)
+		} else {
+			goURL, err = url.NewURL(urlStr)
+		}
+
+		if err != nil {
+			panic(db.vm.NewTypeError("Invalid URL: " + err.Error()))
+		}
+
+		return db.wrapURL(goURL)
+	})
+
+	// URLSearchParams constructor
+	db.vm.Set("URLSearchParams", func(call goja.ConstructorCall) *goja.Object {
+		var init string
+		if len(call.Arguments) > 0 {
+			init = call.Arguments[0].String()
+		}
+
+		params := url.NewURLSearchParams(init)
+		return db.wrapURLSearchParams(params)
+	})
+
+	// Event constructor
+	db.vm.Set("Event", func(call goja.ConstructorCall) *goja.Object {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("Event constructor requires an event type"))
+		}
+
+		eventType := call.Arguments[0].String()
+		obj := db.vm.NewObject()
+		obj.Set("type", eventType)
+		obj.Set("bubbles", false)
+		obj.Set("cancelable", false)
+		obj.Set("target", goja.Null())
+		obj.Set("currentTarget", goja.Null())
+
+		// Handle options parameter
+		if len(call.Arguments) > 1 {
+			options := call.Arguments[1].ToObject(db.vm)
+			if options != nil {
+				if bubblesVal := options.Get("bubbles"); bubblesVal != nil {
+					obj.Set("bubbles", bubblesVal.ToBoolean())
+				}
+				if cancelableVal := options.Get("cancelable"); cancelableVal != nil {
+					obj.Set("cancelable", cancelableVal.ToBoolean())
+				}
+			}
+		}
+
+		return obj
+	})
+
+	// KeyboardEvent constructor
+	db.vm.Set("KeyboardEvent", func(call goja.ConstructorCall) *goja.Object {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("KeyboardEvent constructor requires an event type"))
+		}
+
+		eventType := call.Arguments[0].String()
+		obj := db.vm.NewObject()
+		obj.Set("type", eventType)
+		obj.Set("bubbles", false)
+		obj.Set("cancelable", false)
+		obj.Set("target", goja.Null())
+		obj.Set("currentTarget", goja.Null())
+		obj.Set("key", "")
+		obj.Set("code", "")
+		obj.Set("altKey", false)
+		obj.Set("ctrlKey", false)
+		obj.Set("shiftKey", false)
+		obj.Set("metaKey", false)
+
+		// Handle options parameter
+		if len(call.Arguments) > 1 {
+			options := call.Arguments[1].ToObject(db.vm)
+			if options != nil {
+				if bubblesVal := options.Get("bubbles"); bubblesVal != nil {
+					obj.Set("bubbles", bubblesVal.ToBoolean())
+				}
+				if cancelableVal := options.Get("cancelable"); cancelableVal != nil {
+					obj.Set("cancelable", cancelableVal.ToBoolean())
+				}
+				if keyVal := options.Get("key"); keyVal != nil {
+					obj.Set("key", keyVal.String())
+				}
+				if codeVal := options.Get("code"); codeVal != nil {
+					obj.Set("code", codeVal.String())
+				}
+				if altKeyVal := options.Get("altKey"); altKeyVal != nil {
+					obj.Set("altKey", altKeyVal.ToBoolean())
+				}
+				if ctrlKeyVal := options.Get("ctrlKey"); ctrlKeyVal != nil {
+					obj.Set("ctrlKey", ctrlKeyVal.ToBoolean())
+				}
+				if shiftKeyVal := options.Get("shiftKey"); shiftKeyVal != nil {
+					obj.Set("shiftKey", shiftKeyVal.ToBoolean())
+				}
+				if metaKeyVal := options.Get("metaKey"); metaKeyVal != nil {
+					obj.Set("metaKey", metaKeyVal.ToBoolean())
+				}
+			}
+		}
+
+		return obj
+	})
+
+	// CustomEvent constructor stub
+	db.vm.Set("CustomEvent", func(call goja.ConstructorCall) *goja.Object {
+		obj := db.vm.NewObject()
+		obj.Set("type", "")
+		obj.Set("detail", goja.Null())
+		return obj
+	})
+}
+
+// SetupGlobalAPIs sets up global browser APIs like window.history and window.performance
+func (db *DOMBindings) SetupGlobalAPIs() {
+	// Create window object if it doesn't exist
+	windowValue := db.vm.Get("window")
+	var window *goja.Object
+	if windowValue == nil || goja.IsUndefined(windowValue) || goja.IsNull(windowValue) {
+		window = db.vm.NewObject()
+		db.vm.Set("window", window)
+	} else {
+		window = windowValue.ToObject(db.vm)
+		if window == nil {
+			window = db.vm.NewObject()
+			db.vm.Set("window", window)
+		}
+	}
+
+	// Add event handling capabilities to window object
+	db.addWindowEventMethods(window)
+
+	// Setup History API
+	h := history.NewHistory()
+	window.Set("history", db.wrapHistory(h))
+
+	// Setup Performance API
+	p := performance.NewPerformance()
+	window.Set("performance", db.wrapPerformance(p))
+}
+
+// addWindowEventMethods adds event methods to window but with proper target
+func (db *DOMBindings) addWindowEventMethods(window *goja.Object) {
+	window.Set("addEventListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(db.vm.NewTypeError("addEventListener requires type and listener"))
+		}
+
+		eventType := call.Arguments[0].String()
+		listener, ok := goja.AssertFunction(call.Arguments[1])
+		if !ok {
+			panic(db.vm.NewTypeError("Listener must be a function"))
+		}
+
+		// Store the JavaScript listener for later lookup
+		db.storeWindowJSListener(eventType, db.vm.ToValue(listener).ToObject(db.vm))
+
+		// Wrap the JavaScript function for Go DOM events
+		wrapper := func(event dom.Event) {
+			jsEvent := db.WrapEvent(event)
+			_, _ = listener(goja.Undefined(), jsEvent)
+		}
+
+		db.windowTarget.AddEventListener(eventType, wrapper)
+		return goja.Undefined()
+	})
+
+	window.Set("removeEventListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(db.vm.NewTypeError("removeEventListener requires type and listener"))
+		}
+
+		eventType := call.Arguments[0].String()
+		db.windowTarget.RemoveEventListener(eventType, nil)
+		return goja.Undefined()
+	})
+
+	window.Set("dispatchEvent", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(db.vm.NewTypeError("dispatchEvent requires an event"))
+		}
+
+		// Create a Go DOM event from JavaScript event
+		eventType := ""
+		bubbles := true
+		cancelable := true
+
+		jsEvent := call.Arguments[0].ToObject(db.vm)
+		if jsEvent != nil {
+			if typeVal := jsEvent.Get("type"); typeVal != nil {
+				eventType = typeVal.String()
+			}
+			if bubblesVal := jsEvent.Get("bubbles"); bubblesVal != nil {
+				bubbles = bubblesVal.ToBoolean()
+			}
+			if cancelableVal := jsEvent.Get("cancelable"); cancelableVal != nil {
+				cancelable = cancelableVal.ToBoolean()
+			}
+		}
+
+		if eventType == "" {
+			panic(db.vm.NewTypeError("Event must have a type"))
+		}
+
+		// Create Go DOM event and dispatch it
+		goEvent := dom.NewEvent(eventType, bubbles, cancelable)
+		return db.vm.ToValue(db.windowTarget.DispatchEvent(goEvent))
+	})
+}
+
+// WindowEventTarget implements the Node interface for window event handling
+type WindowEventTarget struct {
+	eventListeners map[string][]func(dom.Event)
+}
+
+func (w *WindowEventTarget) NodeType() dom.NodeType                   { return dom.DocumentNode }
+func (w *WindowEventTarget) NodeName() string                         { return "#window" }
+func (w *WindowEventTarget) NodeValue() string                        { return "" }
+func (w *WindowEventTarget) SetNodeValue(string)                      {}
+func (w *WindowEventTarget) ParentNode() dom.Node                     { return nil }
+func (w *WindowEventTarget) ChildNodes() *dom.NodeList                { return dom.NewNodeList([]dom.Node{}) }
+func (w *WindowEventTarget) FirstChild() dom.Node                     { return nil }
+func (w *WindowEventTarget) LastChild() dom.Node                      { return nil }
+func (w *WindowEventTarget) PreviousSibling() dom.Node                { return nil }
+func (w *WindowEventTarget) NextSibling() dom.Node                    { return nil }
+func (w *WindowEventTarget) OwnerDocument() *dom.Document             { return nil }
+func (w *WindowEventTarget) AppendChild(dom.Node) dom.Node            { return nil }
+func (w *WindowEventTarget) InsertBefore(dom.Node, dom.Node) dom.Node { return nil }
+func (w *WindowEventTarget) ReplaceChild(dom.Node, dom.Node) dom.Node { return nil }
+func (w *WindowEventTarget) RemoveChild(dom.Node) dom.Node            { return nil }
+func (w *WindowEventTarget) CloneNode(bool) dom.Node                  { return nil }
+func (w *WindowEventTarget) Normalize()                               {}
+func (w *WindowEventTarget) IsSupported(string, string) bool          { return false }
+func (w *WindowEventTarget) HasAttributes() bool                      { return false }
+func (w *WindowEventTarget) TextContent() string                      { return "" }
+func (w *WindowEventTarget) SetTextContent(string)                    {}
+func (w *WindowEventTarget) CompareDocumentPosition(dom.Node) int     { return 0 }
+func (w *WindowEventTarget) Contains(dom.Node) bool                   { return false }
+func (w *WindowEventTarget) LookupPrefix(string) string               { return "" }
+func (w *WindowEventTarget) LookupNamespaceURI(string) string         { return "" }
+func (w *WindowEventTarget) IsDefaultNamespace(string) bool           { return false }
+func (w *WindowEventTarget) IsEqualNode(dom.Node) bool                { return false }
+func (w *WindowEventTarget) IsSameNode(dom.Node) bool                 { return false }
+
+// Phase 1: Core Properties & Simple Methods
+func (w *WindowEventTarget) IsConnected() bool           { return false }
+func (w *WindowEventTarget) ParentElement() *dom.Element { return nil }
+func (w *WindowEventTarget) BaseURI() string             { return "" }
+func (w *WindowEventTarget) HasChildNodes() bool         { return false }
+
+// Phase 2: Text Content & Normalization
+// TextContent and SetTextContent already defined above
+
+// Phase 3: Comparison & Traversal Methods
+func (w *WindowEventTarget) GetRootNode(*dom.GetRootNodeOptions) dom.Node { return nil }
+
+// IsEqualNode, IsSameNode, CompareDocumentPosition, Contains already defined above
+
+// Length and IsEmpty
+func (w *WindowEventTarget) Length() int   { return 0 }
+func (w *WindowEventTarget) IsEmpty() bool { return true }
+
+// Internal methods for DOM manipulation and JS binding
+func (w *WindowEventTarget) setParent(dom.Node)             {}
+func (w *WindowEventTarget) setOwnerDocument(*dom.Document) {}
+func (w *WindowEventTarget) toJS(*goja.Runtime) goja.Value  { return goja.Undefined() }
+
+// Mutation Observer methods
+func (w *WindowEventTarget) registerMutationObserver(*dom.MutationObserver, dom.MutationObserverInit) {
+}
+func (w *WindowEventTarget) unregisterMutationObserver(*dom.MutationObserver)  {}
+func (w *WindowEventTarget) getRegisteredObservers() []*dom.RegisteredObserver { return nil }
+
+func (w *WindowEventTarget) AddEventListener(eventType string, listener func(dom.Event)) {
+	if w.eventListeners == nil {
+		w.eventListeners = make(map[string][]func(dom.Event))
+	}
+	w.eventListeners[eventType] = append(w.eventListeners[eventType], listener)
+}
+
+func (w *WindowEventTarget) RemoveEventListener(eventType string, listener func(dom.Event)) {
+	if w.eventListeners != nil {
+		delete(w.eventListeners, eventType)
+	}
+}
+
+func (w *WindowEventTarget) DispatchEvent(event dom.Event) bool {
+	if w.eventListeners != nil {
+		if listeners, ok := w.eventListeners[event.Type()]; ok {
+			for _, listener := range listeners {
+				listener(event)
+			}
+		}
+	}
+	return true
+}
+
 // wrapHistory wraps a History object for JavaScript access
 func (db *DOMBindings) wrapHistory(h *history.History) *goja.Object {
 	obj := db.vm.NewObject()
@@ -680,394 +1385,6 @@ func (db *DOMBindings) wrapPerformanceEntries(entries []performance.PerformanceE
 
 	arr.Set("length", len(entries))
 	return arr
-}
-
-// WrapNodeList wraps a slice of elements as a JavaScript array-like object
-func (db *DOMBindings) WrapNodeList(elements []*dom.Element) *goja.Object {
-	arr := db.vm.NewArray()
-
-	for i, element := range elements {
-		arr.Set(strconv.Itoa(i), db.WrapElement(element))
-	}
-
-	arr.Set("length", len(elements))
-
-	return arr
-}
-
-// addNodeMethods adds common DOM node methods to a JavaScript object
-func (db *DOMBindings) addNodeMethods(obj *goja.Object, node dom.Node) {
-	obj.Set("appendChild", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 {
-			panic(db.vm.NewTypeError("appendChild requires a child node"))
-		}
-
-		// Extract the DOM node from the JavaScript object
-		childArg := call.Arguments[0]
-		child := db.extractNodeFromJS(childArg)
-		if child == nil {
-			panic(db.vm.NewTypeError("Invalid node"))
-		}
-
-		// Perform the actual DOM appendChild operation
-		node.AppendChild(child)
-
-		// Update the child's parentNode property
-		childJS := call.Arguments[0].ToObject(db.vm)
-		if childJS != nil {
-			childJS.Set("parentNode", obj)
-		}
-
-		// Update parent's navigation properties
-		db.updateNodeNavigationProperties(obj, node)
-
-		return call.Arguments[0] // Return the appended child (JavaScript wrapper)
-	})
-
-	obj.Set("removeChild", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 {
-			panic(db.vm.NewTypeError("removeChild requires a child node"))
-		}
-
-		// Simplified implementation - remove first child
-		if node.FirstChild() != nil {
-			node.RemoveChild(node.FirstChild())
-		}
-		return call.Arguments[0] // Return the removed child
-	})
-
-	obj.Set("insertBefore", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 2 {
-			panic(db.vm.NewTypeError("insertBefore requires newChild and referenceChild"))
-		}
-
-		// Simplified implementation
-		childText := call.Arguments[0].String()
-		textNode := db.document.CreateTextNode(childText)
-		node.InsertBefore(textNode, node.FirstChild())
-		return call.Arguments[0] // Return the inserted child
-	})
-
-	obj.Set("replaceChild", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 2 {
-			panic(db.vm.NewTypeError("replaceChild requires newChild and oldChild"))
-		}
-
-		// Simplified implementation
-		if node.FirstChild() != nil {
-			childText := call.Arguments[0].String()
-			textNode := db.document.CreateTextNode(childText)
-			node.ReplaceChild(textNode, node.FirstChild())
-		}
-		return call.Arguments[1] // Return the replaced child
-	})
-
-	obj.Set("cloneNode", func(call goja.FunctionCall) goja.Value {
-		deep := false
-		if len(call.Arguments) > 0 && call.Arguments[0].ToBoolean() {
-			deep = true
-		}
-
-		cloned := node.CloneNode(deep)
-
-		// WrapNode automatically handles Element detection and should call WrapElement
-		// if the cloned node is actually an Element
-		return db.WrapNode(cloned)
-	})
-
-	// Navigation properties - avoid infinite recursion by setting to null initially
-	obj.Set("parentNode", goja.Null())
-	obj.Set("nextSibling", goja.Null())
-	obj.Set("previousSibling", goja.Null())
-
-	// Set up navigation properties properly
-	db.updateNodeNavigationProperties(obj, node)
-}
-
-// addEventMethods adds event handling methods to a JavaScript object
-func (db *DOMBindings) addEventMethods(obj *goja.Object, node dom.Node) {
-	obj.Set("addEventListener", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 2 {
-			panic(db.vm.NewTypeError("addEventListener requires type and listener"))
-		}
-
-		eventType := call.Arguments[0].String()
-		listener, ok := goja.AssertFunction(call.Arguments[1])
-		if !ok {
-			panic(db.vm.NewTypeError("Listener must be a function"))
-		}
-
-		// Wrap the JavaScript function for Go DOM events
-		wrapper := func(event dom.Event) {
-			jsEvent := db.WrapEvent(event)
-			_, _ = listener(goja.Undefined(), jsEvent)
-		}
-
-		node.AddEventListener(eventType, wrapper)
-		return goja.Undefined()
-	})
-
-	obj.Set("removeEventListener", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 2 {
-			panic(db.vm.NewTypeError("removeEventListener requires type and listener"))
-		}
-
-		// For now, we'll implement a simple version
-		// In a full implementation, we'd need to track the wrapper functions
-		eventType := call.Arguments[0].String()
-		node.RemoveEventListener(eventType, nil) // Remove all listeners of this type
-		return goja.Undefined()
-	})
-
-	obj.Set("dispatchEvent", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 {
-			panic(db.vm.NewTypeError("dispatchEvent requires an event"))
-		}
-
-		// Extract Go event from JavaScript wrapper
-		event := db.extractEvent(call.Arguments[0])
-		if event == nil {
-			panic(db.vm.NewTypeError("Invalid event"))
-		}
-
-		return db.vm.ToValue(node.DispatchEvent(event))
-	})
-}
-
-// WrapEvent wraps a DOM event for JavaScript access
-func (db *DOMBindings) WrapEvent(event dom.Event) *goja.Object {
-	evt := db.vm.NewObject()
-
-	evt.Set("type", event.Type())
-
-	// Ensure target and currentTarget are properly wrapped
-	target := event.Target()
-	if target != nil {
-		evt.Set("target", db.WrapNode(target))
-	} else {
-		evt.Set("target", goja.Null())
-	}
-
-	currentTarget := event.CurrentTarget()
-	if currentTarget != nil {
-		evt.Set("currentTarget", db.WrapNode(currentTarget))
-	} else {
-		evt.Set("currentTarget", goja.Null())
-	}
-
-	evt.Set("bubbles", event.Bubbles())
-	evt.Set("cancelable", event.Cancelable())
-	evt.Set("defaultPrevented", event.DefaultPrevented())
-
-	evt.Set("preventDefault", func(call goja.FunctionCall) goja.Value {
-		event.PreventDefault()
-		return goja.Undefined()
-	})
-
-	evt.Set("stopPropagation", func(call goja.FunctionCall) goja.Value {
-		event.StopPropagation()
-		return goja.Undefined()
-	})
-
-	evt.Set("stopImmediatePropagation", func(call goja.FunctionCall) goja.Value {
-		event.StopImmediatePropagation()
-		return goja.Undefined()
-	})
-
-	return evt
-}
-
-// extractNode extracts a Go DOM node from a JavaScript value
-func (db *DOMBindings) extractNode(value goja.Value) dom.Node {
-	// This is a simplified implementation
-	// In a real implementation, we'd need to maintain a mapping
-	// between JavaScript wrappers and Go objects
-	// For now, return nil and let the caller handle it
-	return nil
-}
-
-// extractNodeFromJS extracts a Go DOM node from a JavaScript value
-func (db *DOMBindings) extractNodeFromJS(value goja.Value) dom.Node {
-	// Check if this is a JavaScript object with a __domNode property
-	if obj := value.ToObject(db.vm); obj != nil {
-		if domNodeValue := obj.Get("__domNode"); domNodeValue != nil && !goja.IsUndefined(domNodeValue) {
-			// Extract the stored DOM node
-			if exported := domNodeValue.Export(); exported != nil {
-				if node, ok := exported.(dom.Node); ok {
-					return node
-				}
-			}
-		}
-	}
-	return nil
-}
-
-// updateNodeNavigationProperties updates a JavaScript object's navigation properties to match the DOM state
-func (db *DOMBindings) updateNodeNavigationProperties(obj *goja.Object, node dom.Node) {
-	// Update childNodes array
-	children := db.vm.NewArray()
-	childNodes := node.ChildNodes().ToSlice()
-	for i, childNode := range childNodes {
-		children.Set(strconv.Itoa(i), db.WrapNode(childNode))
-	}
-	children.Set("length", len(childNodes))
-	obj.Set("childNodes", children)
-
-	// Update navigation properties
-	if node.FirstChild() != nil {
-		obj.Set("firstChild", db.WrapNode(node.FirstChild()))
-	} else {
-		obj.Set("firstChild", goja.Null())
-	}
-
-	if node.LastChild() != nil {
-		obj.Set("lastChild", db.WrapNode(node.LastChild()))
-	} else {
-		obj.Set("lastChild", goja.Null())
-	}
-
-	// Note: parentNode, nextSibling, previousSibling would need additional context
-	// and could cause circular references, so we handle them separately when needed
-}
-
-// getTextContent extracts text content from a DOM node
-func (db *DOMBindings) getTextContent(node dom.Node) string {
-	switch n := node.(type) {
-	case *dom.Element:
-		return n.TextContent()
-	case *dom.Text:
-		return n.NodeValue()
-	case *dom.Comment:
-		return ""
-	default:
-		// For other node types, try to get node value
-		return node.NodeValue()
-	}
-}
-
-// extractEvent extracts a Go DOM event from a JavaScript value
-func (db *DOMBindings) extractEvent(value goja.Value) dom.Event {
-	// Similar to extractNode, this would need proper implementation
-	// For now, return nil
-	return nil
-}
-
-// SetupBrowserAPIs sets up browser APIs like CustomEvent, URL, URLSearchParams, History, and Performance
-func (db *DOMBindings) SetupBrowserAPIs() {
-	// DOMException constructor
-	db.vm.Set("DOMException", func(call goja.ConstructorCall) *goja.Object {
-		message := ""
-		name := "Error"
-
-		if len(call.Arguments) > 0 && !goja.IsUndefined(call.Arguments[0]) {
-			message = call.Arguments[0].String()
-		}
-		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Arguments[1]) {
-			name = call.Arguments[1].String()
-		}
-
-		exc := dom.NewDOMException(message, name)
-		return db.wrapDOMException(exc)
-	})
-
-	// Add DOMException constants to the constructor
-	domExceptionConstructor := db.vm.Get("DOMException").(*goja.Object)
-	domExceptionConstructor.Set("INDEX_SIZE_ERR", dom.INDEX_SIZE_ERR)
-	domExceptionConstructor.Set("DOMSTRING_SIZE_ERR", dom.DOMSTRING_SIZE_ERR)
-	domExceptionConstructor.Set("HIERARCHY_REQUEST_ERR", dom.HIERARCHY_REQUEST_ERR)
-	domExceptionConstructor.Set("WRONG_DOCUMENT_ERR", dom.WRONG_DOCUMENT_ERR)
-	domExceptionConstructor.Set("INVALID_CHARACTER_ERR", dom.INVALID_CHARACTER_ERR)
-	domExceptionConstructor.Set("NO_DATA_ALLOWED_ERR", dom.NO_DATA_ALLOWED_ERR)
-	domExceptionConstructor.Set("NO_MODIFICATION_ALLOWED_ERR", dom.NO_MODIFICATION_ALLOWED_ERR)
-	domExceptionConstructor.Set("NOT_FOUND_ERR", dom.NOT_FOUND_ERR)
-	domExceptionConstructor.Set("NOT_SUPPORTED_ERR", dom.NOT_SUPPORTED_ERR)
-	domExceptionConstructor.Set("INUSE_ATTRIBUTE_ERR", dom.INUSE_ATTRIBUTE_ERR)
-	domExceptionConstructor.Set("INVALID_STATE_ERR", dom.INVALID_STATE_ERR)
-	domExceptionConstructor.Set("SYNTAX_ERR", dom.SYNTAX_ERR)
-	domExceptionConstructor.Set("INVALID_MODIFICATION_ERR", dom.INVALID_MODIFICATION_ERR)
-	domExceptionConstructor.Set("NAMESPACE_ERR", dom.NAMESPACE_ERR)
-	domExceptionConstructor.Set("INVALID_ACCESS_ERR", dom.INVALID_ACCESS_ERR)
-	domExceptionConstructor.Set("VALIDATION_ERR", dom.VALIDATION_ERR)
-	domExceptionConstructor.Set("TYPE_MISMATCH_ERR", dom.TYPE_MISMATCH_ERR)
-	domExceptionConstructor.Set("SECURITY_ERR", dom.SECURITY_ERR)
-	domExceptionConstructor.Set("NETWORK_ERR", dom.NETWORK_ERR)
-	domExceptionConstructor.Set("ABORT_ERR", dom.ABORT_ERR)
-	domExceptionConstructor.Set("URL_MISMATCH_ERR", dom.URL_MISMATCH_ERR)
-	domExceptionConstructor.Set("QUOTA_EXCEEDED_ERR", dom.QUOTA_EXCEEDED_ERR)
-	domExceptionConstructor.Set("TIMEOUT_ERR", dom.TIMEOUT_ERR)
-	domExceptionConstructor.Set("INVALID_NODE_TYPE_ERR", dom.INVALID_NODE_TYPE_ERR)
-	domExceptionConstructor.Set("DATA_CLONE_ERR", dom.DATA_CLONE_ERR)
-
-	// URL constructor
-	db.vm.Set("URL", func(call goja.ConstructorCall) *goja.Object {
-		if len(call.Arguments) < 1 {
-			panic(db.vm.NewTypeError("URL constructor requires a URL string"))
-		}
-
-		urlStr := call.Arguments[0].String()
-		var base string
-		if len(call.Arguments) > 1 {
-			base = call.Arguments[1].String()
-		}
-
-		var goURL *url.URL
-		var err error
-		if base != "" {
-			goURL, err = url.NewURL(urlStr, base)
-		} else {
-			goURL, err = url.NewURL(urlStr)
-		}
-
-		if err != nil {
-			panic(db.vm.NewTypeError("Invalid URL: " + err.Error()))
-		}
-
-		return db.wrapURL(goURL)
-	})
-
-	// URLSearchParams constructor
-	db.vm.Set("URLSearchParams", func(call goja.ConstructorCall) *goja.Object {
-		var init string
-		if len(call.Arguments) > 0 {
-			init = call.Arguments[0].String()
-		}
-
-		params := url.NewURLSearchParams(init)
-		return db.wrapURLSearchParams(params)
-	})
-
-	// CustomEvent constructor stub
-	db.vm.Set("CustomEvent", func(call goja.ConstructorCall) *goja.Object {
-		obj := db.vm.NewObject()
-		obj.Set("type", "")
-		obj.Set("detail", goja.Null())
-		return obj
-	})
-}
-
-// SetupGlobalAPIs sets up global browser APIs like window.history and window.performance
-func (db *DOMBindings) SetupGlobalAPIs() {
-	// Create window object if it doesn't exist
-	windowValue := db.vm.Get("window")
-	var window *goja.Object
-	if windowValue == nil || goja.IsUndefined(windowValue) || goja.IsNull(windowValue) {
-		window = db.vm.NewObject()
-		db.vm.Set("window", window)
-	} else {
-		window = windowValue.ToObject(db.vm)
-		if window == nil {
-			window = db.vm.NewObject()
-			db.vm.Set("window", window)
-		}
-	}
-
-	// Setup History API
-	h := history.NewHistory()
-	window.Set("history", db.wrapHistory(h))
-
-	// Setup Performance API
-	p := performance.NewPerformance()
-	window.Set("performance", db.wrapPerformance(p))
 }
 
 // wrapURL wraps a URL object for JavaScript access

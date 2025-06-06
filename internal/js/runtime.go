@@ -320,6 +320,10 @@ func (r *Runtime) setupDOM() {
 
 	r.global.Set("Node", nodeConstants)
 	r.window.Set("Node", nodeConstants)
+
+	// Setup browser APIs and global APIs
+	domBindings.SetupBrowserAPIs()
+	domBindings.SetupGlobalAPIs()
 }
 
 // setupStorage initializes localStorage and sessionStorage

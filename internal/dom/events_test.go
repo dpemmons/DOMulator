@@ -239,16 +239,13 @@ func TestEventPropagationOrder(t *testing.T) {
 	child.DispatchEvent(e) // Dispatching on child (now an Element)
 
 	// Expected order for full propagation (Capture -> Target -> Bubble)
-	// This expectation needs to be updated based on the actual propagation logic in nodeImpl.DispatchEvent
-	// Current nodeImpl.DispatchEvent:
-	// 1. Path: [child, parent, grandparent, document]
-	// 2. Capture: grandparent, parent (stops at child)
-	// 3. Target: child
-	// 4. Bubble: parent, grandparent
+	// According to DOM specification:
+	// 1. CAPTURING_PHASE: Events flow from root towards target, excluding target
+	// 2. AT_TARGET: Only the target receives the event
+	// 3. BUBBLING_PHASE: Events flow from target back up to root, excluding target
 	expected := []string{
 		"grandparent-CAPTURING_PHASE",
 		"parent-CAPTURING_PHASE",
-		"child-CAPTURING_PHASE",
 		"child-AT_TARGET",
 		"parent-BUBBLING_PHASE",
 		"grandparent-BUBBLING_PHASE",
