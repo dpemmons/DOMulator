@@ -5,6 +5,7 @@ import (
 	"time"
 
 	domulator "github.com/dpemmons/DOMulator"
+	testpkg "github.com/dpemmons/DOMulator/testing"
 )
 
 func TestBasicTimeoutAdvancement(t *testing.T) {
@@ -425,4 +426,120 @@ func TestRequestAnimationFrame(t *testing.T) {
 	// No more frames should be scheduled
 	test.ProcessPendingTimers()
 	test.AssertElement("#frame").HasText("3")
+}
+
+func TestEventLoopOrderingWithConsoleCapture(t *testing.T) {
+	harness := testpkg.NewTestHarness()
+	defer harness.Close()
+
+	consoleCapture := harness.CaptureConsole(t)
+
+	harness.LoadHTML(`
+		<html>
+		<body>
+			<div id="sequence"></div>
+			<script>
+				console.log('Script starting...');
+				
+				let sequence = [];
+				
+				// Function to log and update DOM
+				function addToSequence(item) {
+					sequence.push(item);
+					console.log('Added to sequence:', item);
+					console.log('Current sequence:', sequence.join(' -> '));
+					document.getElementById('sequence').textContent = sequence.join(' -> ');
+				}
+				
+				// Synchronous code
+				addToSequence('sync-1');
+				
+				// Microtask
+				queueMicrotask(() => {
+					addToSequence('microtask-1');
+					
+					// Nested microtask
+					queueMicrotask(() => {
+						addToSequence('nested-microtask');
+					});
+				});
+				
+				// Timer (task)
+				setTimeout(() => {
+					addToSequence('timer-1');
+					
+					// Microtask from timer
+					queueMicrotask(() => {
+						addToSequence('timer-microtask');
+					});
+				}, 10);
+				
+				// Another timer
+				setTimeout(() => {
+					addToSequence('timer-2');
+				}, 20);
+				
+				// More synchronous code
+				addToSequence('sync-2');
+				
+				console.log('Script setup complete');
+			</script>
+		</body>
+		</html>
+	`)
+
+	// Assert initial console output
+	consoleCapture.AssertLogContains("Script starting...")
+	consoleCapture.AssertLogContains("Added to sequence:")
+	consoleCapture.AssertLogContains("Script setup complete")
+
+	// Initially should just have synchronous execution
+	sequence := harness.Document().QuerySelector("#sequence")
+	if sequence == nil {
+		t.Fatal("Could not find sequence element")
+	}
+	if sequence.TextContent() != "sync-1 -> sync-2" {
+		t.Errorf("Expected 'sync-1 -> sync-2', got %s", sequence.TextContent())
+	}
+
+	// Process microtasks - should run microtask-1 then nested-microtask
+	harness.FlushMicrotasks()
+
+	consoleCapture.AssertLogContains("microtask-1")
+	consoleCapture.AssertLogContains("nested-microtask")
+
+	if sequence.TextContent() != "sync-1 -> sync-2 -> microtask-1 -> nested-microtask" {
+		t.Errorf("Expected microtasks to be processed, got %s", sequence.TextContent())
+	}
+
+	// Advance time to trigger first timer (10ms)
+	harness.AdvanceTime(10 * time.Millisecond)
+
+	consoleCapture.AssertLogContains("timer-1")
+	consoleCapture.AssertLogContains("timer-microtask")
+
+	expectedAfterTimer1 := "sync-1 -> sync-2 -> microtask-1 -> nested-microtask -> timer-1 -> timer-microtask"
+	if sequence.TextContent() != expectedAfterTimer1 {
+		t.Errorf("Expected timer sequence, got %s", sequence.TextContent())
+	}
+
+	// Advance time to trigger second timer (20ms total)
+	harness.AdvanceTime(10 * time.Millisecond)
+
+	consoleCapture.AssertLogContains("timer-2")
+
+	finalExpected := "sync-1 -> sync-2 -> microtask-1 -> nested-microtask -> timer-1 -> timer-microtask -> timer-2"
+	if sequence.TextContent() != finalExpected {
+		t.Errorf("Expected final sequence, got %s", sequence.TextContent())
+	}
+
+	// Verify sequence demonstrates proper event loop ordering:
+	// 1. Synchronous code executes first
+	// 2. Microtasks process before any timers
+	// 3. Nested microtasks process in order
+	// 4. Timers execute in chronological order
+	// 5. Microtasks from timers execute immediately after timer callback
+	consoleCapture.AssertLogContains("Current sequence:")
+
+	t.Log("✅ Event loop ordering with console capture completed successfully!")
 }

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	domulator "github.com/dpemmons/DOMulator"
+	testpkg "github.com/dpemmons/DOMulator/testing"
 )
 
 func TestBasicEventTrigger(t *testing.T) {
@@ -583,4 +584,78 @@ func TestMediaEventFlow(t *testing.T) {
 	test.AssertElement("#audio").Exists()
 
 	t.Log("✅ Media event flow completed successfully and JavaScript tracked all media events!")
+}
+
+func TestSimpleEventsWithConsoleCapture(t *testing.T) {
+	harness := testpkg.NewTestHarness()
+	defer harness.Close()
+
+	consoleCapture := harness.CaptureConsole(t)
+
+	harness.LoadHTML(`
+		<button id="btn">Click me</button>
+		<div id="output"></div>
+		
+		<script>
+			console.log('Setting up event listeners...');
+			console.warn('This is a warning message');
+			console.error('This is an error message');
+			
+			// Test DOM manipulation
+			document.body.setAttribute('data-script-executed', 'true');
+			console.log('DOM manipulation completed');
+			
+			// Test DOMContentLoaded
+			document.addEventListener('DOMContentLoaded', function() {
+				document.body.setAttribute('data-last-event', 'DOMContentLoaded');
+				console.log('DOMContentLoaded event received');
+			});
+			
+			// Test immediate script execution
+			console.log('Script execution complete!');
+		</script>
+	`)
+
+	// Assert console output for different log levels
+	consoleCapture.AssertLogContains("Setting up event listeners...")
+	consoleCapture.AssertWarnContains("This is a warning message")
+	consoleCapture.AssertErrorContains("This is an error message")
+	consoleCapture.AssertLogContains("DOM manipulation completed")
+	consoleCapture.AssertLogContains("DOMContentLoaded event received")
+	consoleCapture.AssertLogContains("Script execution complete!")
+
+	// Test additional console output through ExecuteScript
+	harness.ExecuteScript(`
+		console.log('Additional log from ExecuteScript');
+		console.warn('Additional warning from ExecuteScript');
+		console.error('Additional error from ExecuteScript');
+		
+		// Test setting an attribute to verify script execution
+		document.body.setAttribute('data-execute-script-ran', 'true');
+	`)
+
+	// Assert the additional console output
+	consoleCapture.AssertLogContains("Additional log from ExecuteScript")
+	consoleCapture.AssertWarnContains("Additional warning from ExecuteScript")
+	consoleCapture.AssertErrorContains("Additional error from ExecuteScript")
+
+	// Verify DOM state
+	body := harness.Document().QuerySelector("body")
+	if body == nil {
+		t.Fatal("Could not find body element")
+	}
+
+	if scriptExecuted := body.GetAttribute("data-script-executed"); scriptExecuted != "true" {
+		t.Errorf("Expected data-script-executed 'true', got %s", scriptExecuted)
+	}
+
+	if executeScriptRan := body.GetAttribute("data-execute-script-ran"); executeScriptRan != "true" {
+		t.Errorf("Expected data-execute-script-ran 'true', got %s", executeScriptRan)
+	}
+
+	if lastEvent := body.GetAttribute("data-last-event"); lastEvent != "DOMContentLoaded" {
+		t.Errorf("Expected data-last-event 'DOMContentLoaded', got %s", lastEvent)
+	}
+
+	t.Log("✅ Console capture test completed successfully!")
 }

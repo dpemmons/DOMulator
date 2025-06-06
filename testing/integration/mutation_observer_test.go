@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	domulator "github.com/dpemmons/DOMulator"
+	testpkg "github.com/dpemmons/DOMulator/testing"
 )
 
 func TestMutationObserver(t *testing.T) {
@@ -275,4 +276,138 @@ func TestMutationObserverWithEventLoop(t *testing.T) {
 	test.AssertElement("#container").HasAttribute("data-order-correct", "true")
 
 	t.Log("✅ MutationObserver respects proper event loop ordering!")
+}
+
+func TestMutationObserverWithConsoleCapture(t *testing.T) {
+	harness := testpkg.NewTestHarness()
+	defer harness.Close()
+
+	consoleCapture := harness.CaptureConsole(t)
+
+	harness.LoadHTML(`
+		<div id="container">
+			<p id="target">Original content</p>
+		</div>
+		
+		<script>
+			console.log('Setting up MutationObserver...');
+			
+			// Track mutations received by the observer
+			let mutations = [];
+			let callbackCount = 0;
+			
+			// Create a MutationObserver
+			const observer = new MutationObserver((mutationsList, observer) => {
+				callbackCount++;
+				console.log('MutationObserver callback fired! Count:', callbackCount);
+				console.log('Mutations received:', mutationsList.length);
+				
+				for (let mutation of mutationsList) {
+					console.log('Mutation type:', mutation.type);
+					if (mutation.type === 'childList') {
+						console.log('Child nodes added:', mutation.addedNodes.length);
+						console.log('Child nodes removed:', mutation.removedNodes.length);
+					}
+					
+					mutations.push({
+						type: mutation.type,
+						target: mutation.target.id || mutation.target.tagName,
+						addedNodesCount: mutation.addedNodes.length,
+						removedNodesCount: mutation.removedNodes.length
+					});
+				}
+				
+				// Store results in DOM for testing
+				document.getElementById('container').setAttribute('data-callback-count', callbackCount.toString());
+				document.getElementById('container').setAttribute('data-mutations', JSON.stringify(mutations));
+			});
+			
+			// Start observing (focus on childList mutations which seem to work)
+			observer.observe(document.getElementById('target'), {
+				childList: true,
+				subtree: true
+			});
+			
+			console.log('MutationObserver setup complete');
+			console.log('Observing element:', document.getElementById('target').id);
+			
+			// Initialize the callback count attribute
+			document.getElementById('container').setAttribute('data-callback-count', '0');
+		</script>
+	`)
+
+	// Assert initial console output
+	consoleCapture.AssertLogContains("Setting up MutationObserver...")
+	consoleCapture.AssertLogContains("MutationObserver setup complete")
+	consoleCapture.AssertLogContains("Observing element:")
+	consoleCapture.AssertLogContains("target")
+
+	// Verify observer is set up but no mutations yet
+	container := harness.Document().QuerySelector("#container")
+	if container == nil {
+		t.Fatal("Could not find container element")
+	}
+	if container.GetAttribute("data-callback-count") != "0" {
+		t.Errorf("Expected callback count 0, got %s", container.GetAttribute("data-callback-count"))
+	}
+
+	// Test 1: Child list mutation (adding node)
+	harness.ExecuteScript(`
+		console.log('Testing child list mutation...');
+		const newElement = document.createElement('span');
+		newElement.textContent = 'New element';
+		document.getElementById('target').appendChild(newElement);
+	`)
+
+	harness.FlushMicrotasks()
+
+	// Assert console output for child mutation
+	consoleCapture.AssertLogContains("Testing child list mutation...")
+	consoleCapture.AssertLogContains("MutationObserver callback fired!")
+
+	if container.GetAttribute("data-callback-count") != "1" {
+		t.Errorf("Expected callback count 1, got %s", container.GetAttribute("data-callback-count"))
+	}
+
+	// Test 2: Adding another child node
+	harness.ExecuteScript(`
+		console.log('Testing second child list mutation...');
+		const anotherElement = document.createElement('div');
+		anotherElement.textContent = 'Another element';
+		document.getElementById('target').appendChild(anotherElement);
+	`)
+
+	harness.FlushMicrotasks()
+
+	// Assert console output for second mutation
+	consoleCapture.AssertLogContains("Testing second child list mutation...")
+
+	if container.GetAttribute("data-callback-count") != "2" {
+		t.Errorf("Expected callback count 2, got %s", container.GetAttribute("data-callback-count"))
+	}
+
+	// Test 3: Removing a child node
+	harness.ExecuteScript(`
+		console.log('Testing child removal...');
+		const target = document.getElementById('target');
+		const spans = target.getElementsByTagName('span');
+		if (spans.length > 0) {
+			target.removeChild(spans[0]);
+		}
+	`)
+
+	harness.FlushMicrotasks()
+
+	// Assert console output for removal
+	consoleCapture.AssertLogContains("Testing child removal...")
+
+	if container.GetAttribute("data-callback-count") != "3" {
+		t.Errorf("Expected callback count 3, got %s", container.GetAttribute("data-callback-count"))
+	}
+
+	// Verify that MutationObserver logs are captured
+	consoleCapture.AssertLogContains("Mutation type:")
+	consoleCapture.AssertLogContains("Child nodes")
+
+	t.Log("✅ MutationObserver with console capture completed successfully!")
 }

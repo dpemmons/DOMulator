@@ -8,6 +8,7 @@ import (
 
 	domulator "github.com/dpemmons/DOMulator"
 	"github.com/dpemmons/DOMulator/internal/dom"
+	testpkg "github.com/dpemmons/DOMulator/testing"
 )
 
 func TestBasicDOMManipulation(t *testing.T) {
@@ -230,4 +231,146 @@ func TestWithHTTPTestServer(t *testing.T) {
 	// This should trigger HTMX behavior and update the result div
 	// Note: This will test both the automatic script loading and HTMX functionality
 	test.AssertElement("#result .success").HasText("Message sent!")
+}
+
+func TestBasicDOMCreationWithConsoleCapture(t *testing.T) {
+	harness := testpkg.NewTestHarness()
+	defer harness.Close()
+
+	consoleCapture := harness.CaptureConsole(t)
+
+	harness.LoadHTML(`
+		<!DOCTYPE html>
+		<html>
+		<head>
+			<title>Test Page</title>
+		</head>
+		<body>
+			<h1 id="title">Hello World</h1>
+			<p class="content">This is a test paragraph.</p>
+			<div id="container">Content here</div>
+			<script>
+				console.log('DOM loaded successfully');
+				console.log('Page title:', document.title);
+				
+				// Log main elements
+				var title = document.getElementById('title');
+				if (title) {
+					console.log('Title found:', title.textContent);
+				} else {
+					console.log('Title element not found');
+				}
+				
+				var content = document.querySelector('.content');
+				if (content) {
+					console.log('Content found:', content.textContent);
+				} else {
+					console.log('Content element not found');
+				}
+				
+				var container = document.getElementById('container');
+				if (container) {
+					console.log('Container found:', container.textContent);
+				} else {
+					console.log('Container element not found');
+				}
+				
+				console.log('DOM inspection complete');
+			</script>
+		</body>
+		</html>
+	`)
+
+	// Assert console output
+	consoleCapture.AssertLogContains("DOM loaded successfully")
+	consoleCapture.AssertLogContains("Page title:")
+	consoleCapture.AssertLogContains("Title found:")
+	consoleCapture.AssertLogContains("Hello World")
+	consoleCapture.AssertLogContains("Content found:")
+	consoleCapture.AssertLogContains("This is a test paragraph.")
+	consoleCapture.AssertLogContains("Container found:")
+	consoleCapture.AssertLogContains("Content here")
+	consoleCapture.AssertLogContains("DOM inspection complete")
+
+	// Test basic element existence using harness
+	title := harness.Document().QuerySelector("#title")
+	if title == nil {
+		t.Fatal("Could not find title element")
+	}
+	if title.TextContent() != "Hello World" {
+		t.Errorf("Expected title 'Hello World', got %s", title.TextContent())
+	}
+
+	container := harness.Document().QuerySelector("#container")
+	if container == nil {
+		t.Fatal("Could not find container element")
+	}
+	if container.TextContent() != "Content here" {
+		t.Errorf("Expected container 'Content here', got %s", container.TextContent())
+	}
+
+	t.Log("✅ Basic DOM creation with console capture completed successfully!")
+}
+
+func TestBasicJavaScriptWithConsoleCapture(t *testing.T) {
+	harness := testpkg.NewTestHarness()
+	defer harness.Close()
+
+	consoleCapture := harness.CaptureConsole(t)
+
+	harness.LoadHTML(`
+		<!DOCTYPE html>
+		<html>
+		<body>
+			<button id="btn">Click me</button>
+			<div id="output"></div>
+			<script>
+				console.log('Setting up DOM manipulation...');
+				
+				// Set up a simple function we can call
+				function updateOutput() {
+					console.log('Updating output via function call...');
+					document.getElementById('output').textContent = 'Function executed!';
+					console.log('Output updated successfully');
+				}
+				
+				// Make function available globally
+				window.updateOutput = updateOutput;
+				
+				console.log('DOM manipulation setup complete');
+			</script>
+		</body>
+		</html>
+	`)
+
+	// Assert initial console output
+	consoleCapture.AssertLogContains("Setting up DOM manipulation...")
+	consoleCapture.AssertLogContains("DOM manipulation setup complete")
+
+	// Test initial state
+	output := harness.Document().QuerySelector("#output")
+	if output == nil {
+		t.Fatal("Could not find output element")
+	}
+	if output.TextContent() != "" {
+		t.Errorf("Expected empty output initially, got %s", output.TextContent())
+	}
+
+	// Test function call by executing script
+	harness.ExecuteScript(`
+		console.log('Calling updateOutput function...');
+		window.updateOutput();
+	`)
+
+	// Assert console output for function call
+	consoleCapture.AssertLogContains("Calling updateOutput function...")
+	consoleCapture.AssertLogContains("Updating output via function call...")
+	consoleCapture.AssertLogContains("Output updated successfully")
+
+	// Verify the output was updated
+	if output.TextContent() != "Function executed!" {
+		t.Errorf("Expected output 'Function executed!', got %s", output.TextContent())
+	}
+
+	t.Log("✅ Basic JavaScript with console capture completed successfully!")
 }
