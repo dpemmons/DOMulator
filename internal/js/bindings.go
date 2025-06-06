@@ -4460,6 +4460,8 @@ func (db *DOMBindings) addPhase4NodeMethods(obj *goja.Object, node dom.Node) {
 	// Text normalization - available on all nodes
 	obj.Set("normalize", func(call goja.FunctionCall) goja.Value {
 		node.Normalize()
+		// Update navigation properties after normalization
+		db.updateNodeNavigationProperties(obj, node)
 		return goja.Undefined()
 	})
 

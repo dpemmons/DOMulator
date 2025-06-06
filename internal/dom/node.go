@@ -1072,71 +1072,159 @@ func isExclusiveTextNode(node Node) bool {
 // Normalize implements the normalize() method from the DOM specification
 func (n *nodeImpl) Normalize() {
 	// Run these steps for each descendant exclusive Text node of this
-	var textNodesToProcess []Node
+	// Process nodes recursively, handling removals correctly
+	n.normalizeDescendants(n.self)
+}
 
-	// Collect all descendant exclusive Text nodes
-	Traverse(n.self, func(node Node) bool {
-		if isExclusiveTextNode(node) {
-			textNodesToProcess = append(textNodesToProcess, node)
+// normalizeDescendants processes all descendant text nodes for normalization
+func (n *nodeImpl) normalizeDescendants(node Node) {
+	// Collect all text nodes first to avoid modifying collection while iterating
+	var textNodes []Node
+	children := node.ChildNodes()
+
+	// Collect text nodes and non-text nodes separately
+	for i := 0; i < children.Length(); i++ {
+		child := children.Item(i)
+		if isExclusiveTextNode(child) {
+			textNodes = append(textNodes, child)
 		}
-		return true // Continue traversal
-	})
+	}
 
-	// Process each Text node
-	for _, textNode := range textNodesToProcess {
-		if !isExclusiveTextNode(textNode) {
-			continue // Skip if it's no longer a Text node
+	// Process all text nodes for normalization
+	for _, textNode := range textNodes {
+		// Only process if the node is still in the tree (might have been removed during normalization)
+		if textNode.ParentNode() == node {
+			n.normalizeTextNode(textNode)
 		}
+	}
 
-		charData, ok := textNode.(CharacterData)
-		if !ok {
-			continue
+	// Now recursively process non-text children
+	// We need to get a fresh children list since normalization may have changed it
+	children = node.ChildNodes()
+	for i := 0; i < children.Length(); i++ {
+		child := children.Item(i)
+		if !isExclusiveTextNode(child) {
+			n.normalizeDescendants(child)
 		}
+	}
+}
 
-		length := charData.Length()
+// normalizeTextNode processes a single text node for normalization
+func (n *nodeImpl) normalizeTextNode(textNode Node) {
+	// Skip if it's no longer a Text node (may have been removed)
+	if !isExclusiveTextNode(textNode) || textNode.ParentNode() == nil {
+		return
+	}
 
-		// If length is zero, remove node and continue
-		if length == 0 {
-			if textNode.ParentNode() != nil {
-				textNode.ParentNode().RemoveChild(textNode)
+	charData, ok := textNode.(CharacterData)
+	if !ok {
+		return
+	}
+
+	length := charData.Length()
+
+	// If length is zero, remove node directly and return
+	if length == 0 {
+		parent := textNode.ParentNode()
+		if parent != nil {
+			// Remove directly from parent's child list
+			switch p := parent.(type) {
+			case *Element:
+				for i, child := range p.nodeImpl.childNodes {
+					if child == textNode {
+						p.nodeImpl.childNodes = append(p.nodeImpl.childNodes[:i], p.nodeImpl.childNodes[i+1:]...)
+						textNode.setParent(nil)
+						break
+					}
+				}
+			case *Document:
+				for i, child := range p.nodeImpl.childNodes {
+					if child == textNode {
+						p.nodeImpl.childNodes = append(p.nodeImpl.childNodes[:i], p.nodeImpl.childNodes[i+1:]...)
+						textNode.setParent(nil)
+						break
+					}
+				}
+			case *DocumentFragment:
+				for i, child := range p.nodeImpl.childNodes {
+					if child == textNode {
+						p.nodeImpl.childNodes = append(p.nodeImpl.childNodes[:i], p.nodeImpl.childNodes[i+1:]...)
+						textNode.setParent(nil)
+						break
+					}
+				}
 			}
-			continue
 		}
+		return
+	}
 
-		// Find contiguous exclusive Text nodes
-		var contiguousNodes []Node
-		currentNode := textNode.NextSibling()
+	// Find contiguous exclusive Text nodes following this one
+	var contiguousNodes []Node
+	currentNode := textNode.NextSibling()
 
-		for currentNode != nil && isExclusiveTextNode(currentNode) {
-			contiguousNodes = append(contiguousNodes, currentNode)
-			currentNode = currentNode.NextSibling()
+	for currentNode != nil && isExclusiveTextNode(currentNode) {
+		contiguousNodes = append(contiguousNodes, currentNode)
+		currentNode = currentNode.NextSibling()
+	}
+
+	if len(contiguousNodes) == 0 {
+		return // No contiguous text nodes to concatenate
+	}
+
+	// Get the data of contiguous exclusive Text nodes in tree order
+	var dataBuilder strings.Builder
+	for _, node := range contiguousNodes {
+		if cd, ok := node.(CharacterData); ok {
+			dataBuilder.WriteString(cd.Data())
 		}
+	}
+	concatenatedData := dataBuilder.String()
 
-		if len(contiguousNodes) == 0 {
-			continue // No contiguous text nodes to concatenate
-		}
+	// Replace data with node textNode, offset length, count 0, and data concatenatedData
+	if concatenatedData != "" {
+		charData.ReplaceData(length, 0, concatenatedData)
+	}
 
-		// Get the data of contiguous exclusive Text nodes in tree order
-		var dataBuilder strings.Builder
-		for _, node := range contiguousNodes {
-			if cd, ok := node.(CharacterData); ok {
-				dataBuilder.WriteString(cd.Data())
+	// Remove contiguous exclusive Text nodes directly from parent's child list
+	parent := textNode.ParentNode()
+	if parent != nil && len(contiguousNodes) > 0 {
+		// Remove nodes directly from parent's child list
+		switch p := parent.(type) {
+		case *Element:
+			// Remove in reverse order to avoid index shifting
+			for i := len(contiguousNodes) - 1; i >= 0; i-- {
+				nodeToRemove := contiguousNodes[i]
+				for j, child := range p.nodeImpl.childNodes {
+					if child == nodeToRemove {
+						p.nodeImpl.childNodes = append(p.nodeImpl.childNodes[:j], p.nodeImpl.childNodes[j+1:]...)
+						nodeToRemove.setParent(nil)
+						break
+					}
+				}
 			}
-		}
-		concatenatedData := dataBuilder.String()
-
-		// Replace data with node textNode, offset length, count 0, and data concatenatedData
-		if concatenatedData != "" {
-			charData.ReplaceData(length, 0, concatenatedData)
-		}
-
-		// TODO: Handle live ranges here when implemented
-		// The spec requires updating range start/end offsets for each contiguous node
-
-		// Remove contiguous exclusive Text nodes in tree order
-		for _, node := range contiguousNodes {
-			if node.ParentNode() != nil {
-				node.ParentNode().RemoveChild(node)
+		case *Document:
+			// Remove in reverse order to avoid index shifting
+			for i := len(contiguousNodes) - 1; i >= 0; i-- {
+				nodeToRemove := contiguousNodes[i]
+				for j, child := range p.nodeImpl.childNodes {
+					if child == nodeToRemove {
+						p.nodeImpl.childNodes = append(p.nodeImpl.childNodes[:j], p.nodeImpl.childNodes[j+1:]...)
+						nodeToRemove.setParent(nil)
+						break
+					}
+				}
+			}
+		case *DocumentFragment:
+			// Remove in reverse order to avoid index shifting
+			for i := len(contiguousNodes) - 1; i >= 0; i-- {
+				nodeToRemove := contiguousNodes[i]
+				for j, child := range p.nodeImpl.childNodes {
+					if child == nodeToRemove {
+						p.nodeImpl.childNodes = append(p.nodeImpl.childNodes[:j], p.nodeImpl.childNodes[j+1:]...)
+						nodeToRemove.setParent(nil)
+						break
+					}
+				}
 			}
 		}
 	}
@@ -1883,6 +1971,50 @@ func (n *nodeImpl) removeRegisteredObserver(observer *MutationObserver) {
 			n.registeredObservers = append(n.registeredObservers[:i], n.registeredObservers[i+1:]...)
 		}
 	}
+}
+
+// removeNodeDirectly removes a node directly from its parent's child list
+// This is used during normalization to avoid issues with standard DOM removal methods
+func (n *nodeImpl) removeNodeDirectly(node Node) {
+	parent := node.ParentNode()
+	if parent == nil {
+		return
+	}
+
+	// Directly manipulate the parent's child list to remove the node
+	switch p := parent.(type) {
+	case *Document:
+		for i, child := range p.nodeImpl.childNodes {
+			if child == node {
+				p.nodeImpl.childNodes = append(p.nodeImpl.childNodes[:i], p.nodeImpl.childNodes[i+1:]...)
+				break
+			}
+		}
+	case *Element:
+		for i, child := range p.nodeImpl.childNodes {
+			if child == node {
+				p.nodeImpl.childNodes = append(p.nodeImpl.childNodes[:i], p.nodeImpl.childNodes[i+1:]...)
+				break
+			}
+		}
+	case *DocumentFragment:
+		for i, child := range p.nodeImpl.childNodes {
+			if child == node {
+				p.nodeImpl.childNodes = append(p.nodeImpl.childNodes[:i], p.nodeImpl.childNodes[i+1:]...)
+				break
+			}
+		}
+	case *ShadowRoot:
+		for i, child := range p.DocumentFragment.nodeImpl.childNodes {
+			if child == node {
+				p.DocumentFragment.nodeImpl.childNodes = append(p.DocumentFragment.nodeImpl.childNodes[:i], p.DocumentFragment.nodeImpl.childNodes[i+1:]...)
+				break
+			}
+		}
+	}
+
+	// Set parent to nil
+	node.setParent(nil)
 }
 
 // locateNamespacePrefix implements the "locate a namespace prefix" algorithm from the DOM specification
