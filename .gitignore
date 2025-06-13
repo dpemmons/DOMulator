@@ -2,3 +2,5 @@
 .DS_Store
 memory-bank
 .ignore
+debug_mode_example
+examples_main
