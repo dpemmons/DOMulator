@@ -429,9 +429,19 @@ func (h *TestHarness) loadPageResources(baseURL string) {
 		}
 	}
 
+	// Process any queued microtasks (e.g., Alpine.js queues itself to start)
+	if h.domulator.runtime.EventLoop() != nil {
+		h.domulator.runtime.EventLoop().ProcessMicrotasks()
+	}
+
 	// Fire DOMContentLoaded event after all scripts have been loaded and executed
 	// This is when scripts can attach event listeners to DOM elements
 	h.domulator.document.FireDOMContentLoaded()
+
+	// Process microtasks again after DOMContentLoaded
+	if h.domulator.runtime.EventLoop() != nil {
+		h.domulator.runtime.EventLoop().ProcessMicrotasks()
+	}
 
 	// Set document readyState to "complete"
 	h.domulator.document.SetReadyState("complete")

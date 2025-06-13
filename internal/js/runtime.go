@@ -203,13 +203,9 @@ func (r *Runtime) setupConsole() {
 	formatArgs := func(args []goja.Value) []interface{} {
 		formatted := make([]interface{}, len(args))
 		for i, arg := range args {
-			if r.debugMode {
-				// In debug mode, export full object details
-				formatted[i] = arg.Export()
-			} else {
-				// In normal mode, use cleaner string representation
-				formatted[i] = r.formatConsoleArg(arg)
-			}
+			// Use formatConsoleArg for both debug and normal mode
+			// It will handle circular references safely
+			formatted[i] = r.formatConsoleArg(arg)
 		}
 		return formatted
 	}
@@ -655,8 +651,8 @@ func (r *Runtime) setupEventLoopTimers() {
 
 	// Enhanced setTimeout with event loop integration
 	r.global.Set("setTimeout", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 2 {
-			panic(r.vm.NewTypeError("setTimeout requires at least 2 arguments"))
+		if len(call.Arguments) < 1 {
+			panic(r.vm.NewTypeError("setTimeout requires at least 1 argument"))
 		}
 
 		callback, ok := goja.AssertFunction(call.Arguments[0])
@@ -664,7 +660,10 @@ func (r *Runtime) setupEventLoopTimers() {
 			panic(r.vm.NewTypeError("First argument must be a function"))
 		}
 
-		delay := call.Arguments[1].ToInteger()
+		delay := int64(0) // Default to 0 if no delay specified
+		if len(call.Arguments) > 1 {
+			delay = call.Arguments[1].ToInteger()
+		}
 		if delay < 0 {
 			delay = 0
 		}

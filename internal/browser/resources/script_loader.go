@@ -106,7 +106,7 @@ func (sl *ScriptLoader) loadAndQueue(task *ResourceTask) {
 		sl.executeScript(execution)
 	} else if isDefer {
 		// Deferred scripts wait until parsing is complete
-		execution.ExecuteTime = time.Now().Add(1 * time.Millisecond) // Slight delay to simulate defer
+		execution.ExecuteTime = time.Now().Add(50 * time.Millisecond) // Longer delay to ensure DOM is ready
 		sl.queueForExecution(execution)
 	} else {
 		// Regular scripts execute in document order

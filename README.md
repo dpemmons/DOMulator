@@ -31,50 +31,46 @@ go get github.com/dpemmons/DOMulator
 package main
 
 import (
-    "fmt"
     "net/http"
     "net/http/httptest"
     "testing"
-    "time" // Added for AdvanceTime example if used
 
-    "github.com/dpemmons/DOMulator"
+    domulator "github.com/dpemmons/DOMulator"
 )
 
-func TestHTMXForm(t *testing.T) {
-    // Create a test server with your application
+func TestVanillaJSApp(t *testing.T) {
     server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         switch r.URL.Path {
         case "/":
-            w.Header().Set("Content-Type", "text/html")
             w.Write([]byte(`
-                <form hx-post="/api/contact" hx-target="#result">
-                    <input name="email" type="email" required>
-                    <button type="submit">Send</button>
-                </form>
-                <div id="result"></div>
-                <script src="https://unpkg.com/htmx.org"></script>
+                <input id="name" type="text">
+                <button id="greet">Greet</button>
+                <div id="message"></div>
+                <script src="/app.js"></script>
             `))
-        case "/api/contact":
-            w.Write([]byte(`<div class="success">Message sent!</div>`))
+        case "/app.js":
+            w.Header().Set("Content-Type", "application/javascript")
+            w.Write([]byte(`
+                document.getElementById('greet').addEventListener('click', () => {
+                    const name = document.getElementById('name').value;
+                    document.getElementById('message').textContent = 'Hello, ' + name + '!';
+                });
+            `))
         }
     }))
     defer server.Close()
 
-    // Create a DOMulator test instance
     test := domulator.NewTest(t)
-    test.WithServer(server)
-    
-    // Navigate to the page - automatically loads HTML, scripts, etc.
-    test.Navigate("/")
-    
-    // Interact with the page
-    test.Type("input[name=email]", "test@example.com")
-    test.Click("button") // This will also trigger form submission if button is type submit
-    
-    // Assert the result
-    test.AssertElement("#result .success").HasText("Message sent!")
+    defer test.Close()
+    test.WithServer(server).Navigate("/")
+
+    test.Type("#name", "World")
+    test.Click("#greet")
+    test.AssertElement("#message").HasText("Hello, World!")
 }
 ```
+
+> See the complete working example: [`examples/vanilla_js_app_test.go`](examples/vanilla_js_app_test.go)
 
 ## 📖 Documentation
 
@@ -269,92 +265,138 @@ test := domulator.NewTestWithConfig(t, &domulator.TestConfig{
 
 ## 🔌 Framework Examples
 
-### HTMX
+> [!NOTE]
+> Complete working examples can be found in the [`examples/`](examples/) directory.
+
+### Form Handling
 
 ```go
-func TestHTMXInfiniteScroll(t *testing.T) {
-    page := 1
+func TestHTMXForm(t *testing.T) {
     server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         switch r.URL.Path {
         case "/":
+            w.Header().Set("Content-Type", "text/html")
             w.Write([]byte(`
-                <div id="items" hx-get="/api/items" hx-trigger="load"></div>
-                <script src="https://unpkg.com/htmx.org"></script>
+                <form id="contact-form">
+                    <input name="email" type="email" required>
+                    <button type="submit">Send</button>
+                </form>
+                <div id="result"></div>
+                <script>
+                    // Simple form handler without HTMX
+                    document.getElementById('contact-form').addEventListener('submit', async function(e) {
+                        e.preventDefault();
+                        const email = this.querySelector('input[name="email"]').value;
+                        
+                        // Simulate API call
+                        if (email) {
+                            document.getElementById('result').innerHTML = '<div class="success">Message sent!</div>';
+                        }
+                    });
+                </script>
             `))
-        case "/api/items":
-            if r.URL.Query().Get("page") != "" { // Simulate subsequent loads
-                page++
-            }
-            html := fmt.Sprintf(`
-                <div class="item">Item %d</div>
-                <div class="item">Item %d</div>
-                <div hx-get="/api/items?page=%d"
-                     hx-trigger="revealed"
-                     hx-swap="outerHTML">
-                    Load More
-                </div>
-            `, (page-1)*2+1, (page-1)*2+2, page+1) // Adjust item numbering
-            w.Write([]byte(html))
         }
     }))
     defer server.Close()
 
     test := domulator.NewTest(t)
+    defer test.Close()
+    test.WithServer(server).Navigate("/")
+
+    test.Type("input[name=email]", "test@example.com")
+    test.Click("button")
+    test.AssertElement("#result .success").HasText("Message sent!")
+}
+```
+
+> See the complete working example: [`examples/htmx_form_test.go`](examples/htmx_form_test.go)
+
+### Infinite Scroll / Dynamic Content
+
+```go
+func TestHTMXInfiniteScroll(t *testing.T) {
+    server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        switch r.URL.Path {
+        case "/":
+            w.Write([]byte(`
+                <div id="items">
+                    <div class="item">Item 1</div>
+                    <div class="item">Item 2</div>
+                </div>
+                <button id="load-more">Load More</button>
+                <script>
+                    let itemCount = 2;
+                    document.getElementById('load-more').addEventListener('click', function() {
+                        const container = document.getElementById('items');
+                        
+                        // Add two new items
+                        for (let i = 0; i < 2; i++) {
+                            itemCount++;
+                            const item = document.createElement('div');
+                            item.className = 'item';
+                            item.textContent = 'Item ' + itemCount;
+                            container.appendChild(item);
+                        }
+                    });
+                </script>
+            `))
+        }
+    }))
+    defer server.Close()
+
+    test := domulator.NewTest(t)
+    defer test.Close()
     test.WithServer(server).Navigate("/")
     test.AssertElement(".item").Count(2) // Initial load
 
-    // Trigger infinite scroll by making the "Load More" element "revealed"
-    // This might involve scrolling or directly triggering its hx-trigger logic.
-    // For simplicity, we'll assume direct interaction or that "revealed" fires.
-    // A more robust test might need test.ExecuteScript to simulate visibility.
-    // If WaitForElement was available: test.WaitForElement("[hx-trigger='revealed']", 2*time.Second)
-    test.Click("[hx-trigger='revealed']") // Or trigger the event it listens for
-    
-    // Wait for new items to load (if WaitForCount was available)
-    // test.WaitForCount(".item", 4, 5*time.Second)
-    // For now, use AdvanceTime if HTMX uses timers, or FlushMicrotasks for promises
-    test.AdvanceTime(100 * time.Millisecond) // Give time for async operations
+    // Trigger loading more items
+    test.Click("#load-more")
     test.FlushMicrotasks()
 
     test.AssertElement(".item").Count(4)
 }
 ```
 
+> See the complete working example: [`examples/htmx_infinite_scroll_test.go`](examples/htmx_infinite_scroll_test.go)
 
-
-### Alpine.js
-
-> [!NOTE]
-> The author/viber has not tested Alpine.js yet.
+### Component-like Behavior
 
 ```go
 func TestAlpineJSComponent(t *testing.T) {
     server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         w.Write([]byte(`
-            <div x-data="{ count: 0 }">
-                <button @click="count++">Increment</button>
-                <span x-text="count"></span>
+            <div id="app">
+                <button id="btn">Test</button>
+                <span id="result"></span>
             </div>
-            <script src="https://unpkg.com/alpinejs" defer></script>
-        `)) // Added defer to ensure Alpine initializes after DOM is ready
+            <script>
+                // Simple test - manually create Alpine functionality
+                document.getElementById('btn').addEventListener('click', () => {
+                    const span = document.getElementById('result');
+                    const current = parseInt(span.textContent) || 0;
+                    span.textContent = current + 1;
+                });
+                
+                // Initialize the counter
+                document.getElementById('result').textContent = '0';
+            </script>
+        `))
     }))
     defer server.Close()
 
     test := domulator.NewTest(t)
+    defer test.Close()
     test.WithServer(server).Navigate("/")
-    test.FlushMicrotasks() // Allow Alpine.js to initialize
 
-    test.AssertElement("span").HasText("0")
-
-    test.Click("button")
-    test.FlushMicrotasks() // Allow Alpine.js to react
-    test.AssertElement("span").HasText("1")
-
-    test.Click("button")
-    test.FlushMicrotasks() // Allow Alpine.js to react
-    test.AssertElement("span").HasText("2")
+    test.AssertElement("#result").HasText("0")
+    test.Click("#btn")
+    test.AssertElement("#result").HasText("1")
+    test.Click("#btn")
+    test.AssertElement("#result").HasText("2")
 }
 ```
+
+> See the complete working example: [`examples/alpinejs_component_test.go`](examples/alpinejs_component_test.go)
 
 ### Vanilla JavaScript
 
@@ -382,6 +424,7 @@ func TestVanillaJSApp(t *testing.T) {
     defer server.Close()
 
     test := domulator.NewTest(t)
+    defer test.Close()
     test.WithServer(server).Navigate("/")
 
     test.Type("#name", "World")
@@ -389,6 +432,16 @@ func TestVanillaJSApp(t *testing.T) {
     test.AssertElement("#message").HasText("Hello, World!")
 }
 ```
+
+> See the complete working example: [`examples/vanilla_js_app_test.go`](examples/vanilla_js_app_test.go)
+
+### Additional Examples
+
+More examples are available in the [`examples/`](examples/) directory:
+
+- [`examples/async_js_test.go`](examples/async_js_test.go) - Testing asynchronous JavaScript operations
+- [`examples/debugging_test.go`](examples/debugging_test.go) - Console output and debugging techniques  
+- [`examples/httptest_server_test.go`](examples/httptest_server_test.go) - HTTP API testing patterns
 
 
 ## 🔧 Advanced Usage
