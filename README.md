@@ -484,7 +484,6 @@ DOMulator is built on these excellent libraries:
 
 - [Goja](https://github.com/dop251/goja) - JavaScript runtime
 - [golang.org/x/net/html](https://golang.org/x/net/html) - HTML parsing
-- Internal CSS Selector Engine ([`internal/css/selectors.go`](internal/css/selectors.go:1)) - For querying the DOM.
 
 ## Known Limitations / Future Work
 
